@@ -1,0 +1,1 @@
+{"root":["./src/app.tsx","./src/main.tsx","./src/lib/api.ts","./src/lib/i18n.tsx","./src/lib/session.tsx","./src/routes/sign-in.tsx","./src/routes/signed-in.tsx"],"version":"5.9.3"}

@@ -283,6 +283,51 @@ describe('refresh token rotation', () => {
     expect(afterBreach.statusCode).toBe(401);
   });
 
+  it('refreshes a browser session from the cookie alone, with no body', async () => {
+    // The shape the web app actually sends: no payload, no content-type, the
+    // token is in an httpOnly cookie the page cannot read.
+    const signIn = await login({
+      schoolSlug: SCHOOL,
+      email: 'admin@greenhill.example',
+      password: PASSWORD,
+    });
+    const cookie = signIn.cookies.find((c) => c.name === 'hamro_refresh');
+
+    const refreshed = await app.inject({
+      method: 'POST',
+      url: '/auth/refresh',
+      cookies: { hamro_refresh: String(cookie?.value) },
+    });
+
+    expect(refreshed.statusCode).toBe(200);
+    expect(refreshed.json().accessToken).toBeTypeOf('string');
+    expect(refreshed.json().refreshToken).toBeUndefined();
+  });
+
+  it('signs out from the cookie alone', async () => {
+    const signIn = await login({
+      schoolSlug: SCHOOL,
+      email: 'admin@greenhill.example',
+      password: PASSWORD,
+    });
+    const cookie = signIn.cookies.find((c) => c.name === 'hamro_refresh');
+
+    const response = await app.inject({
+      method: 'POST',
+      url: '/auth/logout',
+      cookies: { hamro_refresh: String(cookie?.value) },
+    });
+    expect(response.statusCode).toBe(204);
+
+    // And the token is dead.
+    const reuse = await app.inject({
+      method: 'POST',
+      url: '/auth/refresh',
+      cookies: { hamro_refresh: String(cookie?.value) },
+    });
+    expect(reuse.statusCode).toBe(401);
+  });
+
   it('rejects a token belonging to no school', async () => {
     const response = await app.inject({
       method: 'POST',

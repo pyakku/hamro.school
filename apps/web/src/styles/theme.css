@@ -1,0 +1,144 @@
+@import "tailwindcss";
+
+/**
+ * Hamro.school design tokens.
+ *
+ * Straight from the design system, as Tailwind v4 theme variables, so
+ * `bg-ink`, `text-ink-45`, `font-display` and the rest exist as utilities and
+ * nobody has to remember a hex code.
+ *
+ * Jade, stamp and marigold are semantic, not decorative. Jade always means
+ * present or paid; stamp always means absent, overdue or destructive;
+ * marigold always means active, pending or late. Never reach for one of them
+ * because a screen needs a bit of colour.
+ */
+@theme {
+  --color-ink: #14243c;
+  --color-ink-70: #3d4e68;
+  --color-ink-45: #6e7b8f;
+  --color-ink-20: #b4bcc8;
+  --color-paper: #edeeea;
+  --color-card: #f8f8f5;
+  --color-marigold: #e9a21b;
+  --color-marigold-deep: #c7860e;
+  --color-stamp: #b33a2e;
+  --color-jade: #2a7a66;
+
+  --color-rule: rgb(20 36 60 / 0.13);
+  --color-rule-soft: rgb(20 36 60 / 0.07);
+
+  --font-display: "Bricolage Grotesque", system-ui, sans-serif;
+  --font-body: "Mukta", system-ui, sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, monospace;
+
+  /* The only radius in the product, apart from pills and avatars. */
+  --radius-hamro: 3px;
+}
+
+@layer base {
+  html,
+  body,
+  #root {
+    height: 100%;
+  }
+
+  body {
+    background: var(--color-paper);
+    color: var(--color-ink);
+    font-family: var(--font-body);
+    /* 14.5px, not the marketing site's 17px: this is a tool people use for
+       six hours a day, and a register wants rows on one screen. */
+    font-size: 14.5px;
+    line-height: 1.55;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  h1,
+  h2,
+  h3,
+  h4 {
+    font-family: var(--font-display);
+    font-weight: 700;
+    line-height: 1.15;
+    letter-spacing: -0.015em;
+  }
+
+  /* Never removed. Accessibility floor, per the design system. */
+  :focus-visible {
+    outline: 2.5px solid var(--color-marigold-deep);
+    outline-offset: 2px;
+    border-radius: 2px;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+      transition-duration: 0.001ms !important;
+      animation-duration: 0.001ms !important;
+    }
+  }
+}
+
+@layer components {
+  /* Mono, uppercase, wide-tracked. Every field label in the product. */
+  .field-label {
+    font-family: var(--font-mono);
+    font-size: 10px;
+    letter-spacing: 0.13em;
+    text-transform: uppercase;
+    color: var(--color-ink-45);
+  }
+
+  .input {
+    width: 100%;
+    font-family: var(--font-body);
+    font-size: 14.5px;
+    color: var(--color-ink);
+    padding: 9px 12px;
+    background: #fff;
+    border: 1px solid var(--color-rule);
+    border-radius: var(--radius-hamro);
+  }
+
+  .input:focus {
+    border-color: var(--color-ink);
+    outline: none;
+    box-shadow: 0 0 0 3px rgb(233 162 27 / 0.22);
+  }
+
+  .input[aria-invalid="true"] {
+    border-color: var(--color-stamp);
+  }
+
+  /* Hard offset shadow, reserved for the primary action. */
+  .btn-primary {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    font-family: var(--font-display);
+    font-weight: 600;
+    font-size: 14px;
+    padding: 9px 16px;
+    border: 1.5px solid var(--color-ink);
+    border-radius: var(--radius-hamro);
+    background: var(--color-ink);
+    color: var(--color-paper);
+    box-shadow: 3px 3px 0 rgb(20 36 60 / 0.2);
+    transition:
+      transform 0.15s ease,
+      box-shadow 0.15s ease;
+  }
+
+  .btn-primary:hover:not(:disabled) {
+    transform: translate(-1px, -1px);
+    box-shadow: 4px 4px 0 var(--color-marigold);
+  }
+
+  .btn-primary:disabled {
+    opacity: 0.55;
+    box-shadow: none;
+    cursor: not-allowed;
+  }
+}

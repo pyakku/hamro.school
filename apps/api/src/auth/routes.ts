@@ -78,7 +78,10 @@ const authRoutes: FastifyPluginAsync = async (fastify) => {
     {
       config: { rateLimit: { max: 60, timeWindow: '1 minute' } },
       schema: {
-        body: refreshRequestSchema.optional(),
+        // nullish, not optional: the browser sends no body at all on this
+        // route (the token is in the cookie) and Fastify presents that as
+        // null, which an optional object schema rejects.
+        body: refreshRequestSchema.nullish(),
         querystring: clientQuerySchema,
         response: { 200: refreshResponseSchema },
       },
@@ -108,7 +111,7 @@ const authRoutes: FastifyPluginAsync = async (fastify) => {
 
   app.post(
     '/auth/logout',
-    { schema: { body: refreshRequestSchema.optional(), response: { 204: z.null() } } },
+    { schema: { body: refreshRequestSchema.nullish(), response: { 204: z.null() } } },
     async (request, reply) => {
       const token = request.cookies[REFRESH_COOKIE] ?? request.body?.refreshToken;
       if (token) await revokeRefreshToken(token);

@@ -1,6 +1,6 @@
 # 0001 — Data model
 
-Status: **proposed, awaiting approval**
+Status: **accepted**, implemented in the scaffold session.
 Schema: [apps/api/prisma/schema.prisma](../../apps/api/prisma/schema.prisma) — 43 models, validates against Prisma 6.
 
 Everything you specified is in. This document covers the calls I made where you
@@ -126,12 +126,19 @@ everything else in this document.
 
 ## 3. Things the migration must add that Prisma can't express
 
-Recorded here so they don't get lost when we generate the first migration:
+All of these now live in
+[`20260813180000_tenant_isolation`](../../apps/api/prisma/migrations/20260813180000_tenant_isolation/migration.sql):
 
-- **Partial unique indexes for soft delete.** `@@unique([schoolId, admissionNumber])`
-  currently blocks reusing an admission number after a student is soft-deleted.
-  Needs `WHERE deleted_at IS NULL` in raw SQL. Same for staff employee codes,
-  section names and subject codes.
+- **Partial unique indexes for soft delete**, on sections, subjects and grade
+  levels — the structures schools genuinely delete and recreate. Admission
+  numbers and employee codes deliberately keep their hard uniqueness: an
+  identity number issued to a person should not be silently reissued to someone
+  else. Restore the record instead.
+- **Snake_case columns.** The schema started with camelCase columns under
+  snake_case table names, and the first RLS function — which looks for a
+  `school_id` column — matched zero tables and silently protected nothing. All
+  406 columns now carry `@map`. The lesson is in the tests: the RLS test asserts
+  no table with a `school_id` is left without a policy.
 - **One current year per school.** `CREATE UNIQUE INDEX ... ON academic_years (school_id) WHERE is_current`.
 - **`audit_logs` is append-only.** Revoke `UPDATE`/`DELETE` from the app role.
 - **Invoice and receipt numbering.** Sequential per school per year, allocated
@@ -139,7 +146,12 @@ Recorded here so they don't get lost when we generate the first migration:
 
 ---
 
-## 4. Two questions for you
+## 4. Two questions — both now answered
+
+**Decided:** no composite tenant foreign keys; RLS instead. **Decided:**
+attendance is daily, with the schema ready for per-period without a migration.
+The original framing is kept below.
+
 
 **a) Composite tenant foreign keys?** Right now FKs are single-column
 (`sectionId`), so tenancy is enforced by the extension and RLS but the database
