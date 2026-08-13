@@ -40,7 +40,6 @@ export async function buildApp(): Promise<FastifyInstance> {
     // Trust the proxy in production so request.ip is the client's, not the
     // load balancer's — rate limiting and audit entries depend on it.
     trustProxy: env.NODE_ENV === 'production',
-    disableRequestLogging: env.NODE_ENV === 'test',
   }).withTypeProvider<ZodTypeProvider>();
 
   app.setValidatorCompiler(validatorCompiler);

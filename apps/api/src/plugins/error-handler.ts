@@ -1,6 +1,7 @@
 import fp from 'fastify-plugin';
 import type { FastifyError, FastifyPluginAsync, FastifyReply, FastifyRequest } from 'fastify';
 import { ZodError } from 'zod';
+import { hasZodFastifySchemaValidationErrors } from 'fastify-type-provider-zod';
 import { AppError } from '../lib/errors.js';
 import { AuditRequiredError, TenantScopeError } from '../db/tenant.js';
 
@@ -22,6 +23,20 @@ const errorHandlerPlugin: FastifyPluginAsync = async (app) => {
       request.log.debug({ err: rawError, code: rawError.code }, 'handled error');
       return reply.status(rawError.statusCode).send({
         error: { key: rawError.key, code: rawError.code, fields: rawError.fields, requestId },
+      });
+    }
+
+    // Request validation. The Zod type provider wraps issues in Fastify's own
+    // validation array rather than throwing a ZodError, so both shapes have to
+    // be unpacked to get the per-field i18n keys out to the form.
+    if (hasZodFastifySchemaValidationErrors(rawError)) {
+      const fields: Record<string, string> = {};
+      for (const issue of rawError.validation) {
+        const path = issue.instancePath.replace(/^\//, '').replace(/\//g, '.');
+        fields[path || '_'] = issue.message ?? 'error.validation';
+      }
+      return reply.status(422).send({
+        error: { key: 'error.validation', code: 'VALIDATION_FAILED', fields, requestId },
       });
     }
 

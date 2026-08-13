@@ -13,6 +13,36 @@
 -- ═══════════════════════════════════════════════════════════════════════════
 
 
+-- ── 0. Grants for the application role ─────────────────────────────────────
+--
+-- These live in the migration rather than only in the one-time init script
+-- because `prisma migrate reset` drops and recreates the public schema, which
+-- takes every grant with it. A developer resetting their database should end
+-- up with a working app, not a 42501.
+--
+-- If the role is missing the migration stops here, loudly. Carrying on would
+-- produce a database where RLS exists but nothing is subject to it, which is
+-- the worst of both worlds: it looks protected and is not.
+
+DO $$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'hamro_app') THEN
+    RAISE EXCEPTION
+      'Role hamro_app does not exist. Create it first: docker/postgres/init/01-app-role.sql (docker compose runs it automatically on first boot).';
+  END IF;
+END
+$$;
+
+GRANT USAGE ON SCHEMA public TO hamro_app;
+GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO hamro_app;
+GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO hamro_app;
+
+ALTER DEFAULT PRIVILEGES IN SCHEMA public
+  GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO hamro_app;
+ALTER DEFAULT PRIVILEGES IN SCHEMA public
+  GRANT USAGE, SELECT ON SEQUENCES TO hamro_app;
+
+
 -- ── 1. Row-level security on every tenant table ────────────────────────────
 --
 -- Kept as a function rather than 43 hand-written policies so a later migration

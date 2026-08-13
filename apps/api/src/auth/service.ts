@@ -165,25 +165,34 @@ export async function refreshSession(rawToken: string, meta: RequestMeta = {}): 
   if (!school) throw unauthenticated('error.auth.session_expired');
 
   const ctx: TenantContext = { schoolId: school.id, ...meta };
+  const tokenHash = hashRefreshToken(parsed.token);
 
-  return withTenant(ctx, async (db) => {
-    const existing = await db.refreshToken.findFirst({
-      where: { tokenHash: hashRefreshToken(parsed.token) },
-      select: { id: true, userId: true, expiresAt: true, revokedAt: true },
+  const outcome = await withTenant(ctx, async (db) => {
+    // Claim the token by revoking it, and only then look at what we claimed.
+    // An UPDATE ... WHERE revoked_at IS NULL is atomic, so two requests racing
+    // with the same token cannot both succeed — exactly one gets count 1.
+    const claim = await db.refreshToken.updateMany({
+      where: { tokenHash, revokedAt: null },
+      data: { revokedAt: new Date() },
     });
 
-    if (!existing) throw unauthenticated('error.auth.session_expired');
-
-    if (existing.revokedAt !== null) {
-      await db.refreshToken.updateMany({
-        where: { userId: existing.userId, revokedAt: null },
-        data: { revokedAt: new Date() },
+    if (claim.count === 0) {
+      const seen = await db.refreshToken.findFirst({
+        where: { tokenHash },
+        select: { userId: true },
       });
-      throw unauthenticated('error.auth.session_expired');
+      // A token we have seen before and already retired is a replay. One we
+      // have never seen is just rubbish.
+      return seen ? ({ kind: 'REPLAY', userId: seen.userId } as const) : ({ kind: 'UNKNOWN' } as const);
     }
 
+    const existing = await db.refreshToken.findFirstOrThrow({
+      where: { tokenHash },
+      select: { id: true, userId: true, expiresAt: true },
+    });
+
     if (existing.expiresAt.getTime() <= Date.now()) {
-      throw unauthenticated('error.auth.session_expired');
+      return { kind: 'EXPIRED' } as const;
     }
 
     const user = await db.user.findFirst({
@@ -199,10 +208,10 @@ export async function refreshSession(rawToken: string, meta: RequestMeta = {}): 
       },
     });
 
-    if (!user || !user.isActive) throw unauthenticated('error.auth.session_expired');
+    if (!user || !user.isActive) return { kind: 'EXPIRED' } as const;
 
     const roles = activeRoles(user.roleAssignments);
-    if (roles.length === 0) throw new AppError(403, 'NO_ROLES', 'error.auth.no_roles');
+    if (roles.length === 0) return { kind: 'NO_ROLES' } as const;
 
     const next = issueRefreshToken(school.id);
     const created = await db.refreshToken.create({
@@ -219,16 +228,42 @@ export async function refreshSession(rawToken: string, meta: RequestMeta = {}): 
 
     await db.refreshToken.update({
       where: { id: existing.id },
-      data: { revokedAt: new Date(), replacedByTokenId: created.id },
+      data: { replacedByTokenId: created.id },
     });
 
     return {
-      accessToken: await signAccessToken({ userId: user.id, schoolId: school.id, roles }),
-      refreshToken: next.token,
-      expiresIn: ACCESS_TTL_SECONDS,
-      user: toSessionUser(user, roles, school),
-    };
+      kind: 'ROTATED',
+      result: {
+        accessToken: await signAccessToken({ userId: user.id, schoolId: school.id, roles }),
+        refreshToken: next.token,
+        expiresIn: ACCESS_TTL_SECONDS,
+        user: toSessionUser(user, roles, school),
+      },
+    } as const;
   });
+
+  if (outcome.kind === 'ROTATED') return outcome.result;
+
+  if (outcome.kind === 'REPLAY') {
+    // A retired token came back. Either the legitimate client retried after a
+    // dropped response, or someone copied it — and we cannot tell which, so we
+    // assume the worse case and end every session this user has. They sign in
+    // again; whoever stole the token gets nothing.
+    //
+    // This runs in its own transaction on purpose: the revocation has to
+    // commit, and the transaction above is the one that just decided to fail.
+    await withTenant(ctx, (db) =>
+      db.refreshToken.updateMany({
+        where: { userId: outcome.userId, revokedAt: null },
+        data: { revokedAt: new Date() },
+      }),
+    );
+    throw unauthenticated('error.auth.session_expired');
+  }
+
+  if (outcome.kind === 'NO_ROLES') throw new AppError(403, 'NO_ROLES', 'error.auth.no_roles');
+
+  throw unauthenticated('error.auth.session_expired');
 }
 
 /** Signs out one device. Other sessions keep working. */
