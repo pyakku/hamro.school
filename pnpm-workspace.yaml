@@ -1,0 +1,14 @@
+packages:
+  - "apps/*"
+  - "packages/*"
+
+# argon2 and the Prisma engines ship native bindings, and esbuild fetches its
+# platform binary — all three need their install scripts to run.
+allowBuilds:
+  "@prisma/engines": true
+  argon2: true
+  esbuild: true
+  prisma: true
+
+minimumReleaseAgeExclude:
+  - fastify@5.12.0

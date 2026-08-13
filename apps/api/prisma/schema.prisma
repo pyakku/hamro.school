@@ -25,12 +25,16 @@
 // ═══════════════════════════════════════════════════════════════════════════
 
 generator client {
-  provider = "prisma-client-js"
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
 }
 
+// No `url` here, by design. Prisma 7 takes the migration connection from
+// prisma.config.ts and the runtime connection from the adapter passed to
+// `new PrismaClient()`. That is exactly the split we want: migrations connect
+// as the table owner, the API connects as the RLS-restricted `hamro_app`.
 datasource db {
   provider = "postgresql"
-  url      = env("DATABASE_URL")
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -185,7 +189,7 @@ model School {
   slug String @unique
 
   name      String
-  legalName String?
+  legalName String? @map("legal_name")
 
   /// IANA zone, e.g. "Asia/Kathmandu". The only correct way to turn a
   /// timestamptz into "which school day was that".
@@ -194,29 +198,29 @@ model School {
   /// ISO 4217, e.g. "INR". `currencyMinorUnits` is the exponent: 2 for INR,
   /// 0 for JPY/VND, 3 for KWD. Needed to render BigInt minor units correctly.
   currency           String @default("USD")
-  currencyMinorUnits Int    @default(2)
+  currencyMinorUnits Int    @default(2) @map("currency_minor_units")
 
   /// BCP 47 default for the school's UI; individual users may override.
-  defaultLocale String @default("en")
+  defaultLocale String @default("en") @map("default_locale")
 
   /// Days the school normally operates. Mon–Fri is not universal — Gulf
   /// schools run Sun–Thu. Drives the attendance denominator with holidays.
-  workingDays DayOfWeek[] @default([MON, TUE, WED, THU, FRI])
+  workingDays DayOfWeek[] @default([MON, TUE, WED, THU, FRI]) @map("working_days")
 
-  addressLine1 String?
-  addressLine2 String?
+  addressLine1 String? @map("address_line1")
+  addressLine2 String? @map("address_line2")
   city         String?
   state        String?
   country      String? // ISO 3166-1 alpha-2
-  postalCode   String?
+  postalCode   String? @map("postal_code")
   phone        String?
   email        String?
-  logoUrl      String?
+  logoUrl      String? @map("logo_url")
 
-  isActive  Boolean   @default(true)
-  createdAt DateTime  @default(now()) @db.Timestamptz(3)
-  updatedAt DateTime  @updatedAt @db.Timestamptz(3)
-  deletedAt DateTime? @db.Timestamptz(3)
+  isActive  Boolean   @default(true) @map("is_active")
+  createdAt DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt DateTime  @updatedAt @map("updated_at") @db.Timestamptz(3)
+  deletedAt DateTime? @map("deleted_at") @db.Timestamptz(3)
 
   academicYears        AcademicYear[]
   users                User[]
@@ -265,23 +269,23 @@ model School {
 
 model AcademicYear {
   id       String @id @default(cuid())
-  schoolId String
+  schoolId String @map("school_id")
   school   School @relation(fields: [schoolId], references: [id])
 
   /// School-facing label: "2026–27", "2026". Free text; schools disagree.
   name String
 
-  startDate DateTime @db.Date
-  endDate   DateTime @db.Date
+  startDate DateTime @map("start_date") @db.Date
+  endDate   DateTime @map("end_date") @db.Date
 
   status AcademicYearStatus @default(PLANNING)
 
   /// Exactly one per school should be true; enforced in the service layer and
   /// by a partial unique index in the migration.
-  isCurrent Boolean @default(false)
+  isCurrent Boolean @default(false) @map("is_current")
 
-  createdAt DateTime @default(now()) @db.Timestamptz(3)
-  updatedAt DateTime @updatedAt @db.Timestamptz(3)
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
 
   terms                Term[]
   sections             Section[]
@@ -309,18 +313,18 @@ model AcademicYear {
 
 model Term {
   id             String       @id @default(cuid())
-  schoolId       String
+  schoolId       String       @map("school_id")
   school         School       @relation(fields: [schoolId], references: [id])
-  academicYearId String
+  academicYearId String       @map("academic_year_id")
   academicYear   AcademicYear @relation(fields: [academicYearId], references: [id])
 
   name      String // "Term 1", "Semester 2"
   sequence  Int // 1-based ordering within the year
-  startDate DateTime @db.Date
-  endDate   DateTime @db.Date
+  startDate DateTime @map("start_date") @db.Date
+  endDate   DateTime @map("end_date") @db.Date
 
-  createdAt DateTime @default(now()) @db.Timestamptz(3)
-  updatedAt DateTime @updatedAt @db.Timestamptz(3)
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
 
   exams          Exam[]
   feeItems       FeeItem[]
@@ -339,7 +343,7 @@ model Term {
 
 model User {
   id       String @id @default(cuid())
-  schoolId String
+  schoolId String @map("school_id")
   school   School @relation(fields: [schoolId], references: [id])
 
   /// Unique per school, not globally: the same person at two schools has two
@@ -348,27 +352,27 @@ model User {
 
   /// argon2id. Null for accounts created by an admin that have not yet set a
   /// password (invite flow) — such users cannot log in.
-  passwordHash String?
+  passwordHash String? @map("password_hash")
 
-  firstName String
-  lastName  String
+  firstName String  @map("first_name")
+  lastName  String  @map("last_name")
   phone     String?
-  avatarUrl String?
+  avatarUrl String? @map("avatar_url")
 
   /// BCP 47 override of School.defaultLocale.
   locale String?
 
-  emailVerifiedAt DateTime? @db.Timestamptz(3)
-  lastLoginAt     DateTime? @db.Timestamptz(3)
-  isActive        Boolean   @default(true)
+  emailVerifiedAt DateTime? @map("email_verified_at") @db.Timestamptz(3)
+  lastLoginAt     DateTime? @map("last_login_at") @db.Timestamptz(3)
+  isActive        Boolean   @default(true) @map("is_active")
 
   /// Bumped on password change or forced logout; refresh tokens issued before
   /// this instant are rejected.
-  credentialsValidFrom DateTime @default(now()) @db.Timestamptz(3)
+  credentialsValidFrom DateTime @default(now()) @map("credentials_valid_from") @db.Timestamptz(3)
 
-  createdAt DateTime  @default(now()) @db.Timestamptz(3)
-  updatedAt DateTime  @updatedAt @db.Timestamptz(3)
-  deletedAt DateTime? @db.Timestamptz(3)
+  createdAt DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt DateTime  @updatedAt @map("updated_at") @db.Timestamptz(3)
+  deletedAt DateTime? @map("deleted_at") @db.Timestamptz(3)
 
   roleAssignments       RoleAssignment[]
   refreshTokens         RefreshToken[]
@@ -398,11 +402,11 @@ model User {
 model PlatformAdmin {
   id           String   @id @default(cuid())
   email        String   @unique
-  passwordHash String
+  passwordHash String   @map("password_hash")
   name         String
-  isActive     Boolean  @default(true)
-  createdAt    DateTime @default(now()) @db.Timestamptz(3)
-  updatedAt    DateTime @updatedAt @db.Timestamptz(3)
+  isActive     Boolean  @default(true) @map("is_active")
+  createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt    DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
 
   @@map("platform_admins")
 }
@@ -412,21 +416,21 @@ model PlatformAdmin {
 /// that role's own permission set.
 model RoleAssignment {
   id       String @id @default(cuid())
-  schoolId String
+  schoolId String @map("school_id")
   school   School @relation(fields: [schoolId], references: [id])
-  userId   String
+  userId   String @map("user_id")
   user     User   @relation(fields: [userId], references: [id])
 
   role Role
 
   /// Optional: restrict a role to one academic year (e.g. a visiting teacher).
   /// Null = applies to every year.
-  academicYearId String?
+  academicYearId String? @map("academic_year_id")
 
-  isActive  Boolean   @default(true)
-  createdAt DateTime  @default(now()) @db.Timestamptz(3)
-  updatedAt DateTime  @updatedAt @db.Timestamptz(3)
-  revokedAt DateTime? @db.Timestamptz(3)
+  isActive  Boolean   @default(true) @map("is_active")
+  createdAt DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt DateTime  @updatedAt @map("updated_at") @db.Timestamptz(3)
+  revokedAt DateTime? @map("revoked_at") @db.Timestamptz(3)
 
   @@unique([userId, role, academicYearId])
   @@index([schoolId, role, isActive])
@@ -435,24 +439,24 @@ model RoleAssignment {
 
 model RefreshToken {
   id       String @id @default(cuid())
-  schoolId String
-  userId   String
+  schoolId String @map("school_id")
+  userId   String @map("user_id")
   user     User   @relation(fields: [userId], references: [id])
 
   /// SHA-256 of the token. The raw token is never stored.
-  tokenHash String @unique
+  tokenHash String @unique @map("token_hash")
 
   /// Rotation chain: the token that replaced this one, for reuse detection.
-  replacedByTokenId String?       @unique
+  replacedByTokenId String?       @unique @map("replaced_by_token_id")
   replacedByToken   RefreshToken? @relation("TokenRotation", fields: [replacedByTokenId], references: [id])
   replaces          RefreshToken? @relation("TokenRotation")
 
-  expiresAt DateTime  @db.Timestamptz(3)
-  revokedAt DateTime? @db.Timestamptz(3)
-  userAgent String?
-  ipAddress String?
+  expiresAt DateTime  @map("expires_at") @db.Timestamptz(3)
+  revokedAt DateTime? @map("revoked_at") @db.Timestamptz(3)
+  userAgent String?   @map("user_agent")
+  ipAddress String?   @map("ip_address")
 
-  createdAt DateTime @default(now()) @db.Timestamptz(3)
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
 
   @@index([userId, revokedAt])
   @@index([expiresAt])
@@ -461,13 +465,13 @@ model RefreshToken {
 
 model PasswordResetToken {
   id        String    @id @default(cuid())
-  schoolId  String
-  userId    String
+  schoolId  String    @map("school_id")
+  userId    String    @map("user_id")
   user      User      @relation(fields: [userId], references: [id])
-  tokenHash String    @unique
-  expiresAt DateTime  @db.Timestamptz(3)
-  usedAt    DateTime? @db.Timestamptz(3)
-  createdAt DateTime  @default(now()) @db.Timestamptz(3)
+  tokenHash String    @unique @map("token_hash")
+  expiresAt DateTime  @map("expires_at") @db.Timestamptz(3)
+  usedAt    DateTime? @map("used_at") @db.Timestamptz(3)
+  createdAt DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
 
   @@index([userId])
   @@map("password_reset_tokens")
@@ -479,38 +483,38 @@ model PasswordResetToken {
 
 model Student {
   id       String @id @default(cuid())
-  schoolId String
+  schoolId String @map("school_id")
   school   School @relation(fields: [schoolId], references: [id])
 
   /// Optional login. Many schools never issue student accounts.
-  userId String? @unique
+  userId String? @unique @map("user_id")
   user   User?   @relation(fields: [userId], references: [id])
 
-  admissionNumber String
-  firstName       String
-  middleName      String?
-  lastName        String
+  admissionNumber String    @map("admission_number")
+  firstName       String    @map("first_name")
+  middleName      String?   @map("middle_name")
+  lastName        String    @map("last_name")
   /// Free text, not an enum: gender categories differ by country and schools
   /// need to record what their government form asks for.
   gender          String?
-  dateOfBirth     DateTime? @db.Date
-  admissionDate   DateTime? @db.Date
-  photoUrl        String?
-  bloodGroup      String?
+  dateOfBirth     DateTime? @map("date_of_birth") @db.Date
+  admissionDate   DateTime? @map("admission_date") @db.Date
+  photoUrl        String?   @map("photo_url")
+  bloodGroup      String?   @map("blood_group")
   nationality     String?
   /// Government/board identifier where one exists.
-  nationalId      String?
-  medicalNotes    String?
+  nationalId      String?   @map("national_id")
+  medicalNotes    String?   @map("medical_notes")
   address         String?
 
   status     StudentStatus @default(ACTIVE)
-  exitedOn   DateTime?     @db.Date
-  exitReason String?
+  exitedOn   DateTime?     @map("exited_on") @db.Date
+  exitReason String?       @map("exit_reason")
 
-  createdAt       DateTime  @default(now()) @db.Timestamptz(3)
-  updatedAt       DateTime  @updatedAt @db.Timestamptz(3)
-  deletedAt       DateTime? @db.Timestamptz(3)
-  deletedByUserId String?
+  createdAt       DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt       DateTime  @updatedAt @map("updated_at") @db.Timestamptz(3)
+  deletedAt       DateTime? @map("deleted_at") @db.Timestamptz(3)
+  deletedByUserId String?   @map("deleted_by_user_id")
 
   enrolments     Enrolment[]
   guardians      StudentGuardian[]
@@ -524,26 +528,26 @@ model Student {
 
 model Guardian {
   id       String @id @default(cuid())
-  schoolId String
+  schoolId String @map("school_id")
   school   School @relation(fields: [schoolId], references: [id])
 
   /// The parent app login. Null until the guardian is invited.
-  userId String? @unique
+  userId String? @unique @map("user_id")
   user   User?   @relation(fields: [userId], references: [id])
 
-  firstName  String
-  lastName   String
+  firstName  String  @map("first_name")
+  lastName   String  @map("last_name")
   phone      String?
-  altPhone   String?
+  altPhone   String? @map("alt_phone")
   email      String?
   occupation String?
   address    String?
-  nationalId String?
+  nationalId String? @map("national_id")
 
-  createdAt       DateTime  @default(now()) @db.Timestamptz(3)
-  updatedAt       DateTime  @updatedAt @db.Timestamptz(3)
-  deletedAt       DateTime? @db.Timestamptz(3)
-  deletedByUserId String?
+  createdAt       DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt       DateTime  @updatedAt @map("updated_at") @db.Timestamptz(3)
+  deletedAt       DateTime? @map("deleted_at") @db.Timestamptz(3)
+  deletedByUserId String?   @map("deleted_by_user_id")
 
   students StudentGuardian[]
 
@@ -555,25 +559,25 @@ model Guardian {
 /// Many-to-many: siblings share a guardian, a student may have several.
 model StudentGuardian {
   id         String   @id @default(cuid())
-  schoolId   String
-  studentId  String
+  schoolId   String   @map("school_id")
+  studentId  String   @map("student_id")
   student    Student  @relation(fields: [studentId], references: [id])
-  guardianId String
+  guardianId String   @map("guardian_id")
   guardian   Guardian @relation(fields: [guardianId], references: [id])
 
   relation GuardianRelation @default(GUARDIAN)
 
   /// The guardian invoices are addressed to and who is called first.
-  isPrimary             Boolean @default(false)
+  isPrimary             Boolean @default(false) @map("is_primary")
   /// Separate from isPrimary: a non-primary guardian may still get FCM pushes.
-  receivesNotifications Boolean @default(true)
+  receivesNotifications Boolean @default(true) @map("receives_notifications")
   /// Authorised for pickup at the gate.
-  canPickUp             Boolean @default(true)
+  canPickUp             Boolean @default(true) @map("can_pick_up")
   /// Some custody arrangements deny access to records.
-  canViewRecords        Boolean @default(true)
+  canViewRecords        Boolean @default(true) @map("can_view_records")
 
-  createdAt DateTime @default(now()) @db.Timestamptz(3)
-  updatedAt DateTime @updatedAt @db.Timestamptz(3)
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
 
   @@unique([studentId, guardianId])
   @@index([schoolId, guardianId])
@@ -584,26 +588,26 @@ model StudentGuardian {
 /// comes from RoleAssignment, not from this table.
 model StaffProfile {
   id       String @id @default(cuid())
-  schoolId String
+  schoolId String @map("school_id")
   school   School @relation(fields: [schoolId], references: [id])
-  userId   String @unique
+  userId   String @unique @map("user_id")
   user     User   @relation(fields: [userId], references: [id])
 
-  employeeCode  String
+  employeeCode  String    @map("employee_code")
   designation   String? // free text: "Head of Science", "Bus driver"
   department    String?
-  joinedOn      DateTime? @db.Date
-  exitedOn      DateTime? @db.Date
+  joinedOn      DateTime? @map("joined_on") @db.Date
+  exitedOn      DateTime? @map("exited_on") @db.Date
   qualification String?
   /// For drivers; the licence is checked at hire, not by this system.
-  licenceNumber String?
+  licenceNumber String?   @map("licence_number")
 
   status StaffStatus @default(ACTIVE)
 
-  createdAt       DateTime  @default(now()) @db.Timestamptz(3)
-  updatedAt       DateTime  @updatedAt @db.Timestamptz(3)
-  deletedAt       DateTime? @db.Timestamptz(3)
-  deletedByUserId String?
+  createdAt       DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt       DateTime  @updatedAt @map("updated_at") @db.Timestamptz(3)
+  deletedAt       DateTime? @map("deleted_at") @db.Timestamptz(3)
+  deletedByUserId String?   @map("deleted_by_user_id")
 
   classTeacherOf      Section[]            @relation("ClassTeacher")
   teachingAssignments TeachingAssignment[]
@@ -626,7 +630,7 @@ model StaffProfile {
 
 model GradeLevel {
   id       String @id @default(cuid())
-  schoolId String
+  schoolId String @map("school_id")
   school   School @relation(fields: [schoolId], references: [id])
 
   name  String // "Grade 6", "Year 7", "Class VI"
@@ -635,9 +639,9 @@ model GradeLevel {
   /// The stage a school reports on: "Primary", "Middle", "Secondary".
   stage String?
 
-  createdAt DateTime  @default(now()) @db.Timestamptz(3)
-  updatedAt DateTime  @updatedAt @db.Timestamptz(3)
-  deletedAt DateTime? @db.Timestamptz(3)
+  createdAt DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt DateTime  @updatedAt @map("updated_at") @db.Timestamptz(3)
+  deletedAt DateTime? @map("deleted_at") @db.Timestamptz(3)
 
   sections           Section[]
   enrolments         Enrolment[]
@@ -650,8 +654,10 @@ model GradeLevel {
   notices            Notice[]
   reportCardRuns     ReportCardRun[]
 
-  @@unique([schoolId, level])
-  @@index([schoolId])
+  // Uniqueness of `level` within a school is a partial unique index that
+  // ignores soft-deleted rows, so a deleted grade does not block recreating it.
+  // See the tenant_isolation migration; Prisma has no syntax for the WHERE.
+  @@index([schoolId, level])
   @@map("grade_levels")
 }
 
@@ -659,23 +665,23 @@ model GradeLevel {
 /// 2025–26, and the class teacher changes.
 model Section {
   id             String       @id @default(cuid())
-  schoolId       String
+  schoolId       String       @map("school_id")
   school         School       @relation(fields: [schoolId], references: [id])
-  academicYearId String
+  academicYearId String       @map("academic_year_id")
   academicYear   AcademicYear @relation(fields: [academicYearId], references: [id])
-  gradeLevelId   String
+  gradeLevelId   String       @map("grade_level_id")
   gradeLevel     GradeLevel   @relation(fields: [gradeLevelId], references: [id])
 
   name     String // "A", "Blue", "Alpha"
   capacity Int?
   room     String?
 
-  classTeacherId String?
+  classTeacherId String?       @map("class_teacher_id")
   classTeacher   StaffProfile? @relation("ClassTeacher", fields: [classTeacherId], references: [id])
 
-  createdAt DateTime  @default(now()) @db.Timestamptz(3)
-  updatedAt DateTime  @updatedAt @db.Timestamptz(3)
-  deletedAt DateTime? @db.Timestamptz(3)
+  createdAt DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt DateTime  @updatedAt @map("updated_at") @db.Timestamptz(3)
+  deletedAt DateTime? @map("deleted_at") @db.Timestamptz(3)
 
   enrolments          Enrolment[]
   teachingAssignments TeachingAssignment[]
@@ -686,25 +692,27 @@ model Section {
   holidays            Holiday[]
   closures            Closure[]
 
-  @@unique([academicYearId, gradeLevelId, name])
+  // Name is unique per grade and year among live rows only — partial unique
+  // index in the tenant_isolation migration.
+  @@index([academicYearId, gradeLevelId, name])
   @@index([schoolId, academicYearId])
   @@map("sections")
 }
 
 model Subject {
   id       String @id @default(cuid())
-  schoolId String
+  schoolId String @map("school_id")
   school   School @relation(fields: [schoolId], references: [id])
 
   code         String // "MATH", "ENG"
   name         String // school-authored, shown as-is; not an i18n key
   /// Subjects that carry no marks (assembly, library) still appear on a
   /// timetable but must not create exam papers.
-  isExaminable Boolean @default(true)
+  isExaminable Boolean @default(true) @map("is_examinable")
 
-  createdAt DateTime  @default(now()) @db.Timestamptz(3)
-  updatedAt DateTime  @updatedAt @db.Timestamptz(3)
-  deletedAt DateTime? @db.Timestamptz(3)
+  createdAt DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt DateTime  @updatedAt @map("updated_at") @db.Timestamptz(3)
+  deletedAt DateTime? @map("deleted_at") @db.Timestamptz(3)
 
   offerings           SubjectOffering[]
   teachingAssignments TeachingAssignment[]
@@ -713,8 +721,9 @@ model Subject {
   examSubjects        ExamSubject[]
   gradingAssignments  GradingScaleAssignment[]
 
-  @@unique([schoolId, code])
-  @@index([schoolId])
+  // Code is unique per school among live rows only — partial unique index in
+  // the tenant_isolation migration.
+  @@index([schoolId, code])
   @@map("subjects")
 }
 
@@ -722,22 +731,22 @@ model Subject {
 /// counts. Curricula change between years; this is why it is not a column.
 model SubjectOffering {
   id             String       @id @default(cuid())
-  schoolId       String
+  schoolId       String       @map("school_id")
   school         School       @relation(fields: [schoolId], references: [id])
-  academicYearId String
+  academicYearId String       @map("academic_year_id")
   academicYear   AcademicYear @relation(fields: [academicYearId], references: [id])
-  gradeLevelId   String
+  gradeLevelId   String       @map("grade_level_id")
   gradeLevel     GradeLevel   @relation(fields: [gradeLevelId], references: [id])
-  subjectId      String
+  subjectId      String       @map("subject_id")
   subject        Subject      @relation(fields: [subjectId], references: [id])
 
-  isElective Boolean @default(false)
+  isElective Boolean @default(false) @map("is_elective")
   /// Relative weight in a term aggregate, in basis points (10000 = 1.0).
   /// Integer, so no float creeps into report card arithmetic.
-  weightBps  Int     @default(10000)
+  weightBps  Int     @default(10000) @map("weight_bps")
 
-  createdAt DateTime @default(now()) @db.Timestamptz(3)
-  updatedAt DateTime @updatedAt @db.Timestamptz(3)
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
 
   @@unique([academicYearId, gradeLevelId, subjectId])
   @@index([schoolId, academicYearId])
@@ -748,23 +757,23 @@ model SubjectOffering {
 /// only their own classes" in the policy layer.
 model TeachingAssignment {
   id             String       @id @default(cuid())
-  schoolId       String
+  schoolId       String       @map("school_id")
   school         School       @relation(fields: [schoolId], references: [id])
-  academicYearId String
+  academicYearId String       @map("academic_year_id")
   academicYear   AcademicYear @relation(fields: [academicYearId], references: [id])
-  staffId        String
+  staffId        String       @map("staff_id")
   staff          StaffProfile @relation(fields: [staffId], references: [id])
-  sectionId      String
+  sectionId      String       @map("section_id")
   section        Section      @relation(fields: [sectionId], references: [id])
-  subjectId      String
+  subjectId      String       @map("subject_id")
   subject        Subject      @relation(fields: [subjectId], references: [id])
 
   /// A co-teacher may see the class but not enter final marks.
-  canEnterMarks Boolean @default(true)
+  canEnterMarks Boolean @default(true) @map("can_enter_marks")
 
-  createdAt DateTime  @default(now()) @db.Timestamptz(3)
-  updatedAt DateTime  @updatedAt @db.Timestamptz(3)
-  deletedAt DateTime? @db.Timestamptz(3)
+  createdAt DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt DateTime  @updatedAt @map("updated_at") @db.Timestamptz(3)
+  deletedAt DateTime? @map("deleted_at") @db.Timestamptz(3)
 
   @@unique([sectionId, subjectId, staffId])
   @@index([schoolId, academicYearId, staffId])
@@ -777,33 +786,33 @@ model TeachingAssignment {
 
 model Enrolment {
   id             String       @id @default(cuid())
-  schoolId       String
+  schoolId       String       @map("school_id")
   school         School       @relation(fields: [schoolId], references: [id])
-  academicYearId String
+  academicYearId String       @map("academic_year_id")
   academicYear   AcademicYear @relation(fields: [academicYearId], references: [id])
-  studentId      String
+  studentId      String       @map("student_id")
   student        Student      @relation(fields: [studentId], references: [id])
-  gradeLevelId   String
+  gradeLevelId   String       @map("grade_level_id")
   gradeLevel     GradeLevel   @relation(fields: [gradeLevelId], references: [id])
-  sectionId      String
+  sectionId      String       @map("section_id")
   section        Section      @relation(fields: [sectionId], references: [id])
 
   /// Unique within the section; schools sort registers by it.
-  rollNumber Int
+  rollNumber Int @map("roll_number")
 
   status     EnrolmentStatus @default(ACTIVE)
-  enrolledOn DateTime        @db.Date
-  exitedOn   DateTime?       @db.Date
+  enrolledOn DateTime        @map("enrolled_on") @db.Date
+  exitedOn   DateTime?       @map("exited_on") @db.Date
 
   /// Set by the promotion run at year close, so a report card can say where
   /// the student went next without recomputing.
-  promotedToEnrolmentId String?    @unique
+  promotedToEnrolmentId String?    @unique @map("promoted_to_enrolment_id")
   promotedTo            Enrolment? @relation("Promotion", fields: [promotedToEnrolmentId], references: [id])
   promotedFrom          Enrolment? @relation("Promotion")
 
-  createdAt DateTime  @default(now()) @db.Timestamptz(3)
-  updatedAt DateTime  @updatedAt @db.Timestamptz(3)
-  deletedAt DateTime? @db.Timestamptz(3)
+  createdAt DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt DateTime  @updatedAt @map("updated_at") @db.Timestamptz(3)
+  deletedAt DateTime? @map("deleted_at") @db.Timestamptz(3)
 
   attendanceRecords AttendanceRecord[]
   marks             Mark[]
@@ -826,20 +835,20 @@ model Enrolment {
 /// from TimetableEntry so changing the bell does not rewrite every entry.
 model PeriodSlot {
   id             String       @id @default(cuid())
-  schoolId       String
+  schoolId       String       @map("school_id")
   school         School       @relation(fields: [schoolId], references: [id])
-  academicYearId String
+  academicYearId String       @map("academic_year_id")
   academicYear   AcademicYear @relation(fields: [academicYearId], references: [id])
 
   name       String // "Period 1", "Break"
   sequence   Int
-  startTime  DateTime @db.Time(0)
-  endTime    DateTime @db.Time(0)
+  startTime  DateTime @map("start_time") @db.Time(0)
+  endTime    DateTime @map("end_time") @db.Time(0)
   /// Breaks and assembly occupy the grid but hold no subject.
-  isTeaching Boolean  @default(true)
+  isTeaching Boolean  @default(true) @map("is_teaching")
 
-  createdAt DateTime @default(now()) @db.Timestamptz(3)
-  updatedAt DateTime @updatedAt @db.Timestamptz(3)
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
 
   timetableEntries   TimetableEntry[]
   attendanceSessions AttendanceSession[]
@@ -851,30 +860,30 @@ model PeriodSlot {
 
 model TimetableEntry {
   id             String        @id @default(cuid())
-  schoolId       String
+  schoolId       String        @map("school_id")
   school         School        @relation(fields: [schoolId], references: [id])
-  academicYearId String
+  academicYearId String        @map("academic_year_id")
   academicYear   AcademicYear  @relation(fields: [academicYearId], references: [id])
-  sectionId      String
+  sectionId      String        @map("section_id")
   section        Section       @relation(fields: [sectionId], references: [id])
-  periodSlotId   String
+  periodSlotId   String        @map("period_slot_id")
   periodSlot     PeriodSlot    @relation(fields: [periodSlotId], references: [id])
-  subjectId      String
+  subjectId      String        @map("subject_id")
   subject        Subject       @relation(fields: [subjectId], references: [id])
-  staffId        String?
+  staffId        String?       @map("staff_id")
   staff          StaffProfile? @relation(fields: [staffId], references: [id])
 
-  dayOfWeek DayOfWeek
+  dayOfWeek DayOfWeek @map("day_of_week")
   room      String?
 
   /// Timetables change mid-year. Effective dating keeps last month's timetable
   /// resolvable instead of overwriting it.
-  effectiveFrom DateTime  @db.Date
-  effectiveTo   DateTime? @db.Date
+  effectiveFrom DateTime  @map("effective_from") @db.Date
+  effectiveTo   DateTime? @map("effective_to") @db.Date
 
-  createdAt DateTime  @default(now()) @db.Timestamptz(3)
-  updatedAt DateTime  @updatedAt @db.Timestamptz(3)
-  deletedAt DateTime? @db.Timestamptz(3)
+  createdAt DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt DateTime  @updatedAt @map("updated_at") @db.Timestamptz(3)
+  deletedAt DateTime? @map("deleted_at") @db.Timestamptz(3)
 
   @@index([schoolId, academicYearId, sectionId, dayOfWeek])
   @@index([schoolId, staffId, dayOfWeek])
@@ -894,11 +903,11 @@ model TimetableEntry {
 
 model AttendanceSession {
   id             String       @id @default(cuid())
-  schoolId       String
+  schoolId       String       @map("school_id")
   school         School       @relation(fields: [schoolId], references: [id])
-  academicYearId String
+  academicYearId String       @map("academic_year_id")
   academicYear   AcademicYear @relation(fields: [academicYearId], references: [id])
-  sectionId      String
+  sectionId      String       @map("section_id")
   section        Section      @relation(fields: [sectionId], references: [id])
 
   /// Local calendar date in School.timezone. Never a UTC instant.
@@ -906,21 +915,21 @@ model AttendanceSession {
 
   /// Null for once-a-day attendance. Set when a school moves to per-period
   /// attendance, without a migration of the uniqueness rule.
-  periodSlotId String?
+  periodSlotId String?     @map("period_slot_id")
   periodSlot   PeriodSlot? @relation(fields: [periodSlotId], references: [id])
   /// Discriminator that makes the unique key work with a null period, since
   /// Postgres treats NULLs as distinct. "DAY" for daily attendance.
-  sessionKey   String      @default("DAY")
+  sessionKey   String      @default("DAY") @map("session_key")
 
-  takenByUserId String?
+  takenByUserId String?   @map("taken_by_user_id")
   takenBy       User?     @relation("AttendanceTakenBy", fields: [takenByUserId], references: [id])
-  submittedAt   DateTime? @db.Timestamptz(3)
+  submittedAt   DateTime? @map("submitted_at") @db.Timestamptz(3)
   /// Set once the day is closed for edits; later corrections need an admin and
   /// always write an audit entry.
-  lockedAt      DateTime? @db.Timestamptz(3)
+  lockedAt      DateTime? @map("locked_at") @db.Timestamptz(3)
 
-  createdAt DateTime @default(now()) @db.Timestamptz(3)
-  updatedAt DateTime @updatedAt @db.Timestamptz(3)
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
 
   records AttendanceRecord[]
 
@@ -931,11 +940,11 @@ model AttendanceSession {
 
 model AttendanceRecord {
   id          String            @id @default(cuid())
-  schoolId    String
+  schoolId    String            @map("school_id")
   school      School            @relation(fields: [schoolId], references: [id])
-  sessionId   String
+  sessionId   String            @map("session_id")
   session     AttendanceSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
-  enrolmentId String
+  enrolmentId String            @map("enrolment_id")
   enrolment   Enrolment         @relation(fields: [enrolmentId], references: [id])
 
   /// Denormalised from the session so attendance percentages can be computed
@@ -946,18 +955,18 @@ model AttendanceRecord {
 
   /// Set when the status came from an approved StudentLeaveRequest, so an
   /// approved absence can be traced to its authorisation.
-  leaveRequestId String?
+  leaveRequestId String?              @map("leave_request_id")
   leaveRequest   StudentLeaveRequest? @relation(fields: [leaveRequestId], references: [id])
 
   /// Minutes late; only meaningful for LATE.
-  minutesLate Int?
+  minutesLate Int?    @map("minutes_late")
   remark      String?
 
-  recordedByUserId String?
+  recordedByUserId String? @map("recorded_by_user_id")
   recordedBy       User?   @relation("AttendanceRecordedBy", fields: [recordedByUserId], references: [id])
 
-  createdAt DateTime @default(now()) @db.Timestamptz(3)
-  updatedAt DateTime @updatedAt @db.Timestamptz(3)
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
 
   @@unique([sessionId, enrolmentId])
   @@index([schoolId, enrolmentId, date])
@@ -968,24 +977,24 @@ model AttendanceRecord {
 /// Planned non-instructional days. Excluded from the attendance denominator.
 model Holiday {
   id             String       @id @default(cuid())
-  schoolId       String
+  schoolId       String       @map("school_id")
   school         School       @relation(fields: [schoolId], references: [id])
-  academicYearId String
+  academicYearId String       @map("academic_year_id")
   academicYear   AcademicYear @relation(fields: [academicYearId], references: [id])
 
   name      String
-  startDate DateTime @db.Date
-  endDate   DateTime @db.Date // inclusive; equal to startDate for one day
+  startDate DateTime @map("start_date") @db.Date
+  endDate   DateTime @map("end_date") @db.Date // inclusive; equal to startDate for one day
 
   scope        AudienceScope @default(SCHOOL)
-  gradeLevelId String?
+  gradeLevelId String?       @map("grade_level_id")
   gradeLevel   GradeLevel?   @relation(fields: [gradeLevelId], references: [id])
-  sectionId    String?
+  sectionId    String?       @map("section_id")
   section      Section?      @relation(fields: [sectionId], references: [id])
 
-  createdAt DateTime  @default(now()) @db.Timestamptz(3)
-  updatedAt DateTime  @updatedAt @db.Timestamptz(3)
-  deletedAt DateTime? @db.Timestamptz(3)
+  createdAt DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt DateTime  @updatedAt @map("updated_at") @db.Timestamptz(3)
+  deletedAt DateTime? @map("deleted_at") @db.Timestamptz(3)
 
   @@index([schoolId, academicYearId, startDate])
   @@map("holidays")
@@ -995,28 +1004,28 @@ model Holiday {
 /// holiday, but declared same-day, by a named person, and usually pushed.
 model Closure {
   id             String       @id @default(cuid())
-  schoolId       String
+  schoolId       String       @map("school_id")
   school         School       @relation(fields: [schoolId], references: [id])
-  academicYearId String
+  academicYearId String       @map("academic_year_id")
   academicYear   AcademicYear @relation(fields: [academicYearId], references: [id])
 
   reason    String
-  startDate DateTime @db.Date
-  endDate   DateTime @db.Date
+  startDate DateTime @map("start_date") @db.Date
+  endDate   DateTime @map("end_date") @db.Date
 
   scope        AudienceScope @default(SCHOOL)
-  gradeLevelId String?
+  gradeLevelId String?       @map("grade_level_id")
   gradeLevel   GradeLevel?   @relation(fields: [gradeLevelId], references: [id])
-  sectionId    String?
+  sectionId    String?       @map("section_id")
   section      Section?      @relation(fields: [sectionId], references: [id])
 
-  declaredByUserId String?
+  declaredByUserId String?   @map("declared_by_user_id")
   declaredBy       User?     @relation("ClosureDeclaredBy", fields: [declaredByUserId], references: [id])
-  notifiedAt       DateTime? @db.Timestamptz(3)
+  notifiedAt       DateTime? @map("notified_at") @db.Timestamptz(3)
 
-  createdAt DateTime  @default(now()) @db.Timestamptz(3)
-  updatedAt DateTime  @updatedAt @db.Timestamptz(3)
-  deletedAt DateTime? @db.Timestamptz(3)
+  createdAt DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt DateTime  @updatedAt @map("updated_at") @db.Timestamptz(3)
+  deletedAt DateTime? @map("deleted_at") @db.Timestamptz(3)
 
   @@index([schoolId, academicYearId, startDate])
   @@map("closures")
@@ -1025,30 +1034,30 @@ model Closure {
 /// Student leave. Approval is what turns an absence into ABSENT_APPROVED.
 model StudentLeaveRequest {
   id             String       @id @default(cuid())
-  schoolId       String
+  schoolId       String       @map("school_id")
   school         School       @relation(fields: [schoolId], references: [id])
-  academicYearId String
+  academicYearId String       @map("academic_year_id")
   academicYear   AcademicYear @relation(fields: [academicYearId], references: [id])
-  enrolmentId    String
+  enrolmentId    String       @map("enrolment_id")
   enrolment      Enrolment    @relation(fields: [enrolmentId], references: [id])
 
-  startDate     DateTime @db.Date
-  endDate       DateTime @db.Date
+  startDate     DateTime @map("start_date") @db.Date
+  endDate       DateTime @map("end_date") @db.Date
   reason        String
   /// Doctor's note, etc. Storage backend decided at implementation time.
-  attachmentUrl String?
+  attachmentUrl String?  @map("attachment_url")
 
   /// Which guardian or staff member raised it.
-  requestedByUserId String
+  requestedByUserId String @map("requested_by_user_id")
 
   status          LeaveStatus @default(PENDING)
-  decidedByUserId String?
+  decidedByUserId String?     @map("decided_by_user_id")
   decidedBy       User?       @relation("StudentLeaveDecidedBy", fields: [decidedByUserId], references: [id])
-  decidedAt       DateTime?   @db.Timestamptz(3)
-  decisionNote    String?
+  decidedAt       DateTime?   @map("decided_at") @db.Timestamptz(3)
+  decisionNote    String?     @map("decision_note")
 
-  createdAt DateTime @default(now()) @db.Timestamptz(3)
-  updatedAt DateTime @updatedAt @db.Timestamptz(3)
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
 
   attendanceRecords AttendanceRecord[]
 
@@ -1062,25 +1071,25 @@ model StudentLeaveRequest {
 /// with nullable halves.
 model StaffLeaveRequest {
   id       String       @id @default(cuid())
-  schoolId String
+  schoolId String       @map("school_id")
   school   School       @relation(fields: [schoolId], references: [id])
-  staffId  String
+  staffId  String       @map("staff_id")
   staff    StaffProfile @relation(fields: [staffId], references: [id])
 
-  startDate DateTime @db.Date
-  endDate   DateTime @db.Date
+  startDate DateTime @map("start_date") @db.Date
+  endDate   DateTime @map("end_date") @db.Date
   /// "SICK", "CASUAL", "UNPAID" — school-configurable string, not an enum.
-  leaveType String
+  leaveType String   @map("leave_type")
   reason    String?
 
   status          LeaveStatus @default(PENDING)
-  decidedByUserId String?
+  decidedByUserId String?     @map("decided_by_user_id")
   decidedBy       User?       @relation("StaffLeaveDecidedBy", fields: [decidedByUserId], references: [id])
-  decidedAt       DateTime?   @db.Timestamptz(3)
-  decisionNote    String?
+  decidedAt       DateTime?   @map("decided_at") @db.Timestamptz(3)
+  decisionNote    String?     @map("decision_note")
 
-  createdAt DateTime @default(now()) @db.Timestamptz(3)
-  updatedAt DateTime @updatedAt @db.Timestamptz(3)
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
 
   @@index([schoolId, staffId, startDate])
   @@map("staff_leave_requests")
@@ -1092,33 +1101,33 @@ model StaffLeaveRequest {
 
 model HomeworkPost {
   id              String       @id @default(cuid())
-  schoolId        String
+  schoolId        String       @map("school_id")
   school          School       @relation(fields: [schoolId], references: [id])
-  academicYearId  String
+  academicYearId  String       @map("academic_year_id")
   academicYear    AcademicYear @relation(fields: [academicYearId], references: [id])
-  sectionId       String
+  sectionId       String       @map("section_id")
   section         Section      @relation(fields: [sectionId], references: [id])
-  subjectId       String
+  subjectId       String       @map("subject_id")
   subject         Subject      @relation(fields: [subjectId], references: [id])
-  postedByStaffId String
+  postedByStaffId String       @map("posted_by_staff_id")
   postedBy        StaffProfile @relation(fields: [postedByStaffId], references: [id])
 
   title   String?
   body    String
   /// Local date, not an instant: "due tomorrow" is a school-day concept.
-  dueDate DateTime @db.Date
+  dueDate DateTime @map("due_date") @db.Date
 
   attachments Json? // [{ url, name, sizeBytes, mimeType }]
 
-  publishedAt        DateTime? @db.Timestamptz(3)
-  notifyGuardians    Boolean   @default(true)
-  notificationSentAt DateTime? @db.Timestamptz(3)
+  publishedAt        DateTime? @map("published_at") @db.Timestamptz(3)
+  notifyGuardians    Boolean   @default(true) @map("notify_guardians")
+  notificationSentAt DateTime? @map("notification_sent_at") @db.Timestamptz(3)
   /// Evening-before reminder; null once sent or if disabled.
-  reminderDueAt      DateTime? @db.Timestamptz(3)
+  reminderDueAt      DateTime? @map("reminder_due_at") @db.Timestamptz(3)
 
-  createdAt DateTime  @default(now()) @db.Timestamptz(3)
-  updatedAt DateTime  @updatedAt @db.Timestamptz(3)
-  deletedAt DateTime? @db.Timestamptz(3)
+  createdAt DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt DateTime  @updatedAt @map("updated_at") @db.Timestamptz(3)
+  deletedAt DateTime? @map("deleted_at") @db.Timestamptz(3)
 
   @@index([schoolId, sectionId, dueDate])
   @@index([schoolId, academicYearId, publishedAt])
@@ -1127,36 +1136,36 @@ model HomeworkPost {
 
 model Notice {
   id             String        @id @default(cuid())
-  schoolId       String
+  schoolId       String        @map("school_id")
   school         School        @relation(fields: [schoolId], references: [id])
-  academicYearId String?
+  academicYearId String?       @map("academic_year_id")
   academicYear   AcademicYear? @relation(fields: [academicYearId], references: [id])
 
   title String
   body  String
 
   scope         AudienceScope @default(SCHOOL)
-  gradeLevelId  String?
+  gradeLevelId  String?       @map("grade_level_id")
   gradeLevel    GradeLevel?   @relation(fields: [gradeLevelId], references: [id])
-  sectionId     String?
+  sectionId     String?       @map("section_id")
   section       Section?      @relation(fields: [sectionId], references: [id])
   /// Additionally restrict to roles, e.g. teachers only. Empty = everyone in
   /// scope.
-  audienceRoles Role[]        @default([])
+  audienceRoles Role[]        @default([]) @map("audience_roles")
 
   attachments Json?
 
-  publishedAt        DateTime? @db.Timestamptz(3)
-  expiresAt          DateTime? @db.Timestamptz(3)
-  isPinned           Boolean   @default(false)
-  notificationSentAt DateTime? @db.Timestamptz(3)
+  publishedAt        DateTime? @map("published_at") @db.Timestamptz(3)
+  expiresAt          DateTime? @map("expires_at") @db.Timestamptz(3)
+  isPinned           Boolean   @default(false) @map("is_pinned")
+  notificationSentAt DateTime? @map("notification_sent_at") @db.Timestamptz(3)
 
-  authorUserId String
+  authorUserId String @map("author_user_id")
   author       User   @relation("NoticeAuthor", fields: [authorUserId], references: [id])
 
-  createdAt DateTime  @default(now()) @db.Timestamptz(3)
-  updatedAt DateTime  @updatedAt @db.Timestamptz(3)
-  deletedAt DateTime? @db.Timestamptz(3)
+  createdAt DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt DateTime  @updatedAt @map("updated_at") @db.Timestamptz(3)
+  deletedAt DateTime? @map("deleted_at") @db.Timestamptz(3)
 
   @@index([schoolId, publishedAt])
   @@map("notices")
@@ -1164,25 +1173,25 @@ model Notice {
 
 model DeviceToken {
   id       String @id @default(cuid())
-  schoolId String
+  schoolId String @map("school_id")
   school   School @relation(fields: [schoolId], references: [id])
-  userId   String
+  userId   String @map("user_id")
   user     User   @relation(fields: [userId], references: [id])
 
   /// FCM registration token. Unique globally — FCM reassigns a token to a new
   /// install, and the old row must be replaced, not duplicated.
   token       String         @unique
   platform    DevicePlatform
-  appVersion  String?
-  deviceModel String?
+  appVersion  String?        @map("app_version")
+  deviceModel String?        @map("device_model")
   /// Push language; falls back to User.locale.
   locale      String?
 
-  lastSeenAt DateTime  @default(now()) @db.Timestamptz(3)
-  revokedAt  DateTime? @db.Timestamptz(3)
+  lastSeenAt DateTime  @default(now()) @map("last_seen_at") @db.Timestamptz(3)
+  revokedAt  DateTime? @map("revoked_at") @db.Timestamptz(3)
 
-  createdAt DateTime @default(now()) @db.Timestamptz(3)
-  updatedAt DateTime @updatedAt @db.Timestamptz(3)
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
 
   @@index([schoolId, userId, revokedAt])
   @@map("device_tokens")
@@ -1198,30 +1207,30 @@ model DeviceToken {
 
 model Exam {
   id             String       @id @default(cuid())
-  schoolId       String
+  schoolId       String       @map("school_id")
   school         School       @relation(fields: [schoolId], references: [id])
-  academicYearId String
+  academicYearId String       @map("academic_year_id")
   academicYear   AcademicYear @relation(fields: [academicYearId], references: [id])
-  termId         String?
+  termId         String?      @map("term_id")
   term           Term?        @relation(fields: [termId], references: [id])
 
   name      String // "Mid-term", "Unit Test 2"
   /// School-defined category used for weighting: "UNIT_TEST", "FINAL".
   category  String?
   /// Contribution to the term aggregate, in basis points.
-  weightBps Int     @default(10000)
+  weightBps Int     @default(10000) @map("weight_bps")
 
-  startDate DateTime? @db.Date
-  endDate   DateTime? @db.Date
+  startDate DateTime? @map("start_date") @db.Date
+  endDate   DateTime? @map("end_date") @db.Date
 
   /// Marks cannot be edited after this without an admin override + audit row.
-  marksLockedAt      DateTime? @db.Timestamptz(3)
+  marksLockedAt      DateTime? @map("marks_locked_at") @db.Timestamptz(3)
   /// Visible to guardians from this instant.
-  resultsPublishedAt DateTime? @db.Timestamptz(3)
+  resultsPublishedAt DateTime? @map("results_published_at") @db.Timestamptz(3)
 
-  createdAt DateTime  @default(now()) @db.Timestamptz(3)
-  updatedAt DateTime  @updatedAt @db.Timestamptz(3)
-  deletedAt DateTime? @db.Timestamptz(3)
+  createdAt DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt DateTime  @updatedAt @map("updated_at") @db.Timestamptz(3)
+  deletedAt DateTime? @map("deleted_at") @db.Timestamptz(3)
 
   examSubjects ExamSubject[]
 
@@ -1233,25 +1242,25 @@ model Exam {
 /// One paper: a subject, sat by a grade level, out of a maximum.
 model ExamSubject {
   id           String     @id @default(cuid())
-  schoolId     String
+  schoolId     String     @map("school_id")
   school       School     @relation(fields: [schoolId], references: [id])
-  examId       String
+  examId       String     @map("exam_id")
   exam         Exam       @relation(fields: [examId], references: [id])
-  subjectId    String
+  subjectId    String     @map("subject_id")
   subject      Subject    @relation(fields: [subjectId], references: [id])
-  gradeLevelId String
+  gradeLevelId String     @map("grade_level_id")
   gradeLevel   GradeLevel @relation(fields: [gradeLevelId], references: [id])
 
   /// Exact decimal, never a float. Half marks are routine.
-  maxMarks  Decimal  @db.Decimal(7, 2)
-  passMarks Decimal? @db.Decimal(7, 2)
+  maxMarks  Decimal  @map("max_marks") @db.Decimal(7, 2)
+  passMarks Decimal? @map("pass_marks") @db.Decimal(7, 2)
   /// Weight of this paper within its subject for the term aggregate.
-  weightBps Int      @default(10000)
+  weightBps Int      @default(10000) @map("weight_bps")
 
-  examDate DateTime? @db.Date
+  examDate DateTime? @map("exam_date") @db.Date
 
-  createdAt DateTime @default(now()) @db.Timestamptz(3)
-  updatedAt DateTime @updatedAt @db.Timestamptz(3)
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
 
   marks Mark[]
 
@@ -1262,33 +1271,33 @@ model ExamSubject {
 
 model Mark {
   id            String      @id @default(cuid())
-  schoolId      String
+  schoolId      String      @map("school_id")
   school        School      @relation(fields: [schoolId], references: [id])
-  examSubjectId String
+  examSubjectId String      @map("exam_subject_id")
   examSubject   ExamSubject @relation(fields: [examSubjectId], references: [id])
-  enrolmentId   String
+  enrolmentId   String      @map("enrolment_id")
   enrolment     Enrolment   @relation(fields: [enrolmentId], references: [id])
 
   /// The only thing stored. Null when absent or exempt.
-  rawMarks Decimal? @db.Decimal(7, 2)
+  rawMarks Decimal? @map("raw_marks") @db.Decimal(7, 2)
 
   /// Absent sits in the numerator as zero or is excluded, depending on the
   /// school's policy — a read-time decision, not a stored one.
-  isAbsent Boolean @default(false)
+  isAbsent Boolean @default(false) @map("is_absent")
   /// Exempt (e.g. did not take the elective) always leaves the denominator.
-  isExempt Boolean @default(false)
+  isExempt Boolean @default(false) @map("is_exempt")
 
   remark String?
 
-  enteredByUserId  String?
+  enteredByUserId  String?   @map("entered_by_user_id")
   enteredBy        User?     @relation("MarkEnteredBy", fields: [enteredByUserId], references: [id])
-  verifiedByUserId String?
+  verifiedByUserId String?   @map("verified_by_user_id")
   verifiedBy       User?     @relation("MarkVerifiedBy", fields: [verifiedByUserId], references: [id])
-  verifiedAt       DateTime? @db.Timestamptz(3)
+  verifiedAt       DateTime? @map("verified_at") @db.Timestamptz(3)
 
-  createdAt DateTime  @default(now()) @db.Timestamptz(3)
-  updatedAt DateTime  @updatedAt @db.Timestamptz(3)
-  deletedAt DateTime? @db.Timestamptz(3)
+  createdAt DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt DateTime  @updatedAt @map("updated_at") @db.Timestamptz(3)
+  deletedAt DateTime? @map("deleted_at") @db.Timestamptz(3)
 
   @@unique([examSubjectId, enrolmentId])
   @@index([schoolId, enrolmentId])
@@ -1299,7 +1308,7 @@ model Mark {
 /// without altering results already published under the old boundaries.
 model GradingScale {
   id               String           @id @default(cuid())
-  schoolId         String
+  schoolId         String           @map("school_id")
   school           School           @relation(fields: [schoolId], references: [id])
   name             String
   type             GradingScaleType
@@ -1307,11 +1316,11 @@ model GradingScale {
   aggregation      MarkAggregation  @default(WEIGHTED_MEAN)
   /// Decimal places to round the computed percentage to before band lookup.
   /// A boundary case (79.995 → A or B) must be decided by data, not by code.
-  roundingDecimals Int              @default(2)
+  roundingDecimals Int              @default(2) @map("rounding_decimals")
 
-  createdAt DateTime  @default(now()) @db.Timestamptz(3)
-  updatedAt DateTime  @updatedAt @db.Timestamptz(3)
-  deletedAt DateTime? @db.Timestamptz(3)
+  createdAt DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt DateTime  @updatedAt @map("updated_at") @db.Timestamptz(3)
+  deletedAt DateTime? @map("deleted_at") @db.Timestamptz(3)
 
   versions    GradingScaleVersion[]
   assignments GradingScaleAssignment[]
@@ -1322,16 +1331,16 @@ model GradingScale {
 
 model GradingScaleVersion {
   id             String       @id @default(cuid())
-  schoolId       String
-  gradingScaleId String
+  schoolId       String       @map("school_id")
+  gradingScaleId String       @map("grading_scale_id")
   gradingScale   GradingScale @relation(fields: [gradingScaleId], references: [id])
 
   version     Int
   /// Immutable once published; edits create a new version.
-  publishedAt DateTime? @db.Timestamptz(3)
+  publishedAt DateTime? @map("published_at") @db.Timestamptz(3)
   note        String?
 
-  createdAt DateTime @default(now()) @db.Timestamptz(3)
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
 
   bands          GradingBand[]
   assignments    GradingScaleAssignment[]
@@ -1345,14 +1354,14 @@ model GradingScaleVersion {
 /// none of it appears in the codebase.
 model GradingBand {
   id        String              @id @default(cuid())
-  schoolId  String
-  versionId String
+  schoolId  String              @map("school_id")
+  versionId String              @map("version_id")
   version   GradingScaleVersion @relation(fields: [versionId], references: [id], onDelete: Cascade)
 
   /// Percentage window, inclusive of min, exclusive of max, except for the top
   /// band which includes 100. Stored exact.
-  minPercent Decimal @db.Decimal(6, 3)
-  maxPercent Decimal @db.Decimal(6, 3)
+  minPercent Decimal @map("min_percent") @db.Decimal(6, 3)
+  maxPercent Decimal @map("max_percent") @db.Decimal(6, 3)
 
   /// What the school calls it: "A*", "Distinction", "7". Displayed verbatim;
   /// not an i18n key, because it is the school's own vocabulary.
@@ -1360,11 +1369,11 @@ model GradingBand {
   description String?
   /// GPA points, if the scale carries them.
   points      Decimal? @db.Decimal(5, 3)
-  isPass      Boolean  @default(true)
+  isPass      Boolean  @default(true) @map("is_pass")
   /// Display order, highest band first.
   sequence    Int
 
-  createdAt DateTime @default(now()) @db.Timestamptz(3)
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
 
   @@unique([versionId, sequence])
   @@index([versionId])
@@ -1375,23 +1384,23 @@ model GradingBand {
 /// subject+grade → grade → school-wide (both null).
 model GradingScaleAssignment {
   id             String               @id @default(cuid())
-  schoolId       String
+  schoolId       String               @map("school_id")
   school         School               @relation(fields: [schoolId], references: [id])
-  academicYearId String
+  academicYearId String               @map("academic_year_id")
   academicYear   AcademicYear         @relation(fields: [academicYearId], references: [id])
-  gradingScaleId String
+  gradingScaleId String               @map("grading_scale_id")
   gradingScale   GradingScale         @relation(fields: [gradingScaleId], references: [id])
   /// Pinned version; null means "always the latest published version".
-  versionId      String?
+  versionId      String?              @map("version_id")
   version        GradingScaleVersion? @relation(fields: [versionId], references: [id])
 
-  gradeLevelId String?
+  gradeLevelId String?     @map("grade_level_id")
   gradeLevel   GradeLevel? @relation(fields: [gradeLevelId], references: [id])
-  subjectId    String?
+  subjectId    String?     @map("subject_id")
   subject      Subject?    @relation(fields: [subjectId], references: [id])
 
-  createdAt DateTime @default(now()) @db.Timestamptz(3)
-  updatedAt DateTime @updatedAt @db.Timestamptz(3)
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
 
   @@unique([academicYearId, gradeLevelId, subjectId])
   @@index([schoolId, academicYearId])
@@ -1403,25 +1412,25 @@ model GradingScaleAssignment {
 /// The card itself is still computed from raw marks — nothing is denormalised.
 model ReportCardRun {
   id             String       @id @default(cuid())
-  schoolId       String
+  schoolId       String       @map("school_id")
   school         School       @relation(fields: [schoolId], references: [id])
-  academicYearId String
+  academicYearId String       @map("academic_year_id")
   academicYear   AcademicYear @relation(fields: [academicYearId], references: [id])
-  termId         String?
+  termId         String?      @map("term_id")
   term           Term?        @relation(fields: [termId], references: [id])
-  gradeLevelId   String
+  gradeLevelId   String       @map("grade_level_id")
   gradeLevel     GradeLevel   @relation(fields: [gradeLevelId], references: [id])
 
-  gradingScaleVersionId String
+  gradingScaleVersionId String              @map("grading_scale_version_id")
   gradingScaleVersion   GradingScaleVersion @relation(fields: [gradingScaleVersionId], references: [id])
 
   /// Exams included in this card, and their weights at publication time.
-  examWeights Json
+  examWeights Json @map("exam_weights")
 
-  publishedAt DateTime? @db.Timestamptz(3)
+  publishedAt DateTime? @map("published_at") @db.Timestamptz(3)
 
-  createdAt DateTime @default(now()) @db.Timestamptz(3)
-  updatedAt DateTime @updatedAt @db.Timestamptz(3)
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
 
   @@unique([academicYearId, termId, gradeLevelId])
   @@index([schoolId, academicYearId])
@@ -1435,20 +1444,20 @@ model ReportCardRun {
 
 model FeeStructure {
   id             String       @id @default(cuid())
-  schoolId       String
+  schoolId       String       @map("school_id")
   school         School       @relation(fields: [schoolId], references: [id])
-  academicYearId String
+  academicYearId String       @map("academic_year_id")
   academicYear   AcademicYear @relation(fields: [academicYearId], references: [id])
   /// Null = applies to every grade level.
-  gradeLevelId   String?
+  gradeLevelId   String?      @map("grade_level_id")
   gradeLevel     GradeLevel?  @relation(fields: [gradeLevelId], references: [id])
 
   name     String
-  isActive Boolean @default(true)
+  isActive Boolean @default(true) @map("is_active")
 
-  createdAt DateTime  @default(now()) @db.Timestamptz(3)
-  updatedAt DateTime  @updatedAt @db.Timestamptz(3)
-  deletedAt DateTime? @db.Timestamptz(3)
+  createdAt DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt DateTime  @updatedAt @map("updated_at") @db.Timestamptz(3)
+  deletedAt DateTime? @map("deleted_at") @db.Timestamptz(3)
 
   items FeeItem[]
 
@@ -1459,12 +1468,12 @@ model FeeStructure {
 
 model FeeItem {
   id             String       @id @default(cuid())
-  schoolId       String
+  schoolId       String       @map("school_id")
   school         School       @relation(fields: [schoolId], references: [id])
-  feeStructureId String
+  feeStructureId String       @map("fee_structure_id")
   feeStructure   FeeStructure @relation(fields: [feeStructureId], references: [id])
   /// Set for TERM frequency items billed in a specific term.
-  termId         String?
+  termId         String?      @map("term_id")
   term           Term?        @relation(fields: [termId], references: [id])
 
   name     String // "Tuition", "Transport", "Lab"
@@ -1473,15 +1482,15 @@ model FeeItem {
 
   /// Minor units. BigInt, not Int: a 32-bit int overflows at ~21M major units
   /// in a 2-decimal currency, and low-denomination currencies get there.
-  amountMinor BigInt
+  amountMinor BigInt       @map("amount_minor")
   frequency   FeeFrequency @default(TERM)
 
   /// Optional items (transport, lunch) are billed only if the student opted in.
-  isOptional Boolean @default(false)
+  isOptional Boolean @default(false) @map("is_optional")
 
-  createdAt DateTime  @default(now()) @db.Timestamptz(3)
-  updatedAt DateTime  @updatedAt @db.Timestamptz(3)
-  deletedAt DateTime? @db.Timestamptz(3)
+  createdAt DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt DateTime  @updatedAt @map("updated_at") @db.Timestamptz(3)
+  deletedAt DateTime? @map("deleted_at") @db.Timestamptz(3)
 
   invoiceLines InvoiceLine[]
   concessions  FeeConcession[]
@@ -1495,16 +1504,16 @@ model FeeItem {
 /// invoice stays a fixed record of what was billed.
 model FeeConcession {
   id       String @id @default(cuid())
-  schoolId String
+  schoolId String @map("school_id")
   school   School @relation(fields: [schoolId], references: [id])
 
-  studentId   String
+  studentId   String     @map("student_id")
   student     Student    @relation(fields: [studentId], references: [id])
   /// Null = applies for as long as it is active, across years.
-  enrolmentId String?
+  enrolmentId String?    @map("enrolment_id")
   enrolment   Enrolment? @relation(fields: [enrolmentId], references: [id])
   /// Null = applies to the whole invoice.
-  feeItemId   String?
+  feeItemId   String?    @map("fee_item_id")
   feeItem     FeeItem?   @relation(fields: [feeItemId], references: [id])
 
   name String // "Sibling discount", "Merit scholarship"
@@ -1512,17 +1521,17 @@ model FeeConcession {
 
   /// Basis points for PERCENTAGE (2500 = 25%). Integer — percentages of money
   /// must never be computed from a float.
-  valueBps   Int?
+  valueBps   Int?    @map("value_bps")
   /// Minor units for FIXED_AMOUNT.
-  valueMinor BigInt?
+  valueMinor BigInt? @map("value_minor")
 
-  validFrom DateTime  @db.Date
-  validTo   DateTime? @db.Date
-  isActive  Boolean   @default(true)
+  validFrom DateTime  @map("valid_from") @db.Date
+  validTo   DateTime? @map("valid_to") @db.Date
+  isActive  Boolean   @default(true) @map("is_active")
 
-  createdAt DateTime  @default(now()) @db.Timestamptz(3)
-  updatedAt DateTime  @updatedAt @db.Timestamptz(3)
-  deletedAt DateTime? @db.Timestamptz(3)
+  createdAt DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt DateTime  @updatedAt @map("updated_at") @db.Timestamptz(3)
+  deletedAt DateTime? @map("deleted_at") @db.Timestamptz(3)
 
   @@index([schoolId, studentId])
   @@map("fee_concessions")
@@ -1530,43 +1539,43 @@ model FeeConcession {
 
 model Invoice {
   id             String       @id @default(cuid())
-  schoolId       String
+  schoolId       String       @map("school_id")
   school         School       @relation(fields: [schoolId], references: [id])
-  academicYearId String
+  academicYearId String       @map("academic_year_id")
   academicYear   AcademicYear @relation(fields: [academicYearId], references: [id])
-  enrolmentId    String
+  enrolmentId    String       @map("enrolment_id")
   enrolment      Enrolment    @relation(fields: [enrolmentId], references: [id])
-  termId         String?
+  termId         String?      @map("term_id")
   term           Term?        @relation(fields: [termId], references: [id])
 
   /// Human-facing, sequential per school per year. Generated in a transaction.
   number String
 
-  issueDate DateTime @db.Date
-  dueDate   DateTime @db.Date
+  issueDate DateTime @map("issue_date") @db.Date
+  dueDate   DateTime @map("due_date") @db.Date
 
   /// Copied from the school at issue time: a school changing currency must not
   /// reinterpret historical invoices.
   currency String
 
   /// Sums of the lines, held for query speed and reconciled by a check job.
-  subtotalMinor   BigInt @default(0)
-  concessionMinor BigInt @default(0)
-  totalMinor      BigInt @default(0)
+  subtotalMinor   BigInt @default(0) @map("subtotal_minor")
+  concessionMinor BigInt @default(0) @map("concession_minor")
+  totalMinor      BigInt @default(0) @map("total_minor")
   /// Maintained from allocations; the source of truth for "what is due".
-  paidMinor       BigInt @default(0)
+  paidMinor       BigInt @default(0) @map("paid_minor")
 
   status InvoiceStatus @default(DRAFT)
   notes  String?
 
   /// OVERDUE is derived from dueDate and paidMinor at read time, never stored
   /// — otherwise it needs a nightly job to stay honest.
-  voidedAt       DateTime? @db.Timestamptz(3)
-  voidReason     String?
-  lastRemindedAt DateTime? @db.Timestamptz(3)
+  voidedAt       DateTime? @map("voided_at") @db.Timestamptz(3)
+  voidReason     String?   @map("void_reason")
+  lastRemindedAt DateTime? @map("last_reminded_at") @db.Timestamptz(3)
 
-  createdAt DateTime @default(now()) @db.Timestamptz(3)
-  updatedAt DateTime @updatedAt @db.Timestamptz(3)
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
 
   lines       InvoiceLine[]
   allocations PaymentAllocation[]
@@ -1579,24 +1588,24 @@ model Invoice {
 
 model InvoiceLine {
   id        String   @id @default(cuid())
-  schoolId  String
-  invoiceId String
+  schoolId  String   @map("school_id")
+  invoiceId String   @map("invoice_id")
   invoice   Invoice  @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
   /// Null if the fee item was deleted or the line was added ad hoc.
-  feeItemId String?
+  feeItemId String?  @map("fee_item_id")
   feeItem   FeeItem? @relation(fields: [feeItemId], references: [id])
 
   /// Snapshot of the item name at issue time. Renaming a fee item must not
   /// change what an old invoice says.
   description     String
   quantity        Int    @default(1)
-  unitAmountMinor BigInt
-  concessionMinor BigInt @default(0)
-  lineTotalMinor  BigInt
+  unitAmountMinor BigInt @map("unit_amount_minor")
+  concessionMinor BigInt @default(0) @map("concession_minor")
+  lineTotalMinor  BigInt @map("line_total_minor")
 
   sequence Int
 
-  createdAt DateTime @default(now()) @db.Timestamptz(3)
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
 
   @@index([invoiceId])
   @@map("invoice_lines")
@@ -1606,40 +1615,40 @@ model InvoiceLine {
 /// a second row that points back at it.
 model Payment {
   id       String @id @default(cuid())
-  schoolId String
+  schoolId String @map("school_id")
   school   School @relation(fields: [schoolId], references: [id])
 
   /// Sequential per school. What the parent's receipt says.
-  receiptNumber String
+  receiptNumber String @map("receipt_number")
 
   /// Payments attach to the student, then get allocated across invoices — a
   /// parent paying for two terms at once is one payment, two allocations.
-  enrolmentId String
+  enrolmentId String @map("enrolment_id")
 
-  amountMinor BigInt
+  amountMinor BigInt        @map("amount_minor")
   currency    String
   method      PaymentMethod
   /// Cheque number, transfer UTR, or blank for cash.
   reference   String?
   /// Local date the office received it, which is not the instant it was keyed.
-  receivedOn  DateTime      @db.Date
+  receivedOn  DateTime      @map("received_on") @db.Date
   /// Cheques clear later; dues chasing uses this.
-  clearedOn   DateTime?     @db.Date
+  clearedOn   DateTime?     @map("cleared_on") @db.Date
 
   status            PaymentStatus @default(RECORDED)
   /// Set on the reversing row, pointing at the payment it cancels.
-  reversesPaymentId String?       @unique
+  reversesPaymentId String?       @unique @map("reverses_payment_id")
   reversesPayment   Payment?      @relation("PaymentReversal", fields: [reversesPaymentId], references: [id])
   reversedBy        Payment?      @relation("PaymentReversal")
-  reversalReason    String?
+  reversalReason    String?       @map("reversal_reason")
 
   notes String?
 
-  recordedByUserId String
+  recordedByUserId String @map("recorded_by_user_id")
   recordedBy       User   @relation("PaymentRecordedBy", fields: [recordedByUserId], references: [id])
 
-  createdAt DateTime @default(now()) @db.Timestamptz(3)
-  updatedAt DateTime @updatedAt @db.Timestamptz(3)
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
 
   allocations PaymentAllocation[]
 
@@ -1653,15 +1662,15 @@ model Payment {
 /// pays a round sum against three outstanding terms.
 model PaymentAllocation {
   id        String  @id @default(cuid())
-  schoolId  String
-  paymentId String
+  schoolId  String  @map("school_id")
+  paymentId String  @map("payment_id")
   payment   Payment @relation(fields: [paymentId], references: [id])
-  invoiceId String
+  invoiceId String  @map("invoice_id")
   invoice   Invoice @relation(fields: [invoiceId], references: [id])
 
-  amountMinor BigInt
+  amountMinor BigInt @map("amount_minor")
 
-  createdAt DateTime @default(now()) @db.Timestamptz(3)
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
 
   @@unique([paymentId, invoiceId])
   @@index([invoiceId])
@@ -1675,32 +1684,32 @@ model PaymentAllocation {
 
 model AuditLog {
   id       String @id @default(cuid())
-  schoolId String
+  schoolId String @map("school_id")
   school   School @relation(fields: [schoolId], references: [id])
 
   /// Prisma model name, e.g. "Mark".
-  entityType String
-  entityId   String
+  entityType String      @map("entity_type")
+  entityId   String      @map("entity_id")
   action     AuditAction
 
   /// Only the fields that moved, plus their old and new values. Full-row
   /// snapshots get expensive at attendance volume.
-  changedFields String[] @default([])
+  changedFields String[] @default([]) @map("changed_fields")
   before        Json?
   after         Json?
 
-  actorUserId String?
+  actorUserId String? @map("actor_user_id")
   actor       User?   @relation(fields: [actorUserId], references: [id])
   /// Which hat the actor was wearing, since one user can hold several roles.
-  actorRole   Role?
+  actorRole   Role?   @map("actor_role")
 
   /// Free-text reason, required by the service layer for mark corrections
   /// after lock and for payment reversals.
   reason String?
 
-  requestId String?
-  ipAddress String?
-  userAgent String?
+  requestId String? @map("request_id")
+  ipAddress String? @map("ip_address")
+  userAgent String? @map("user_agent")
 
   at DateTime @default(now()) @db.Timestamptz(3)
 
