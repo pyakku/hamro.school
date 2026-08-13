@@ -1,0 +1,1711 @@
+// ═══════════════════════════════════════════════════════════════════════════
+// Hamro.school — data model
+//
+// Conventions enforced throughout (see docs/decisions/0001-data-model.md):
+//
+//   1. Every domain table carries `schoolId`. No exceptions. Tenant scoping is
+//      applied centrally by a Prisma client extension, backed by Postgres RLS.
+//   2. The academic year is an entity. Students do not hold a grade or section;
+//      an `Enrolment` links student → gradeLevel + section + rollNumber + year.
+//      Attendance, marks, invoices and homework hang off the enrolment, so
+//      promotion is a new row and history stays resolvable.
+//   3. Marks are stored raw. No letter, band, GPA or average is ever persisted.
+//      `GradingScaleVersion` + `GradingBand` are data; grades are computed on read.
+//   4. Money is BigInt in minor units. Currency and minor-unit digits live on
+//      the school. There is no Float anywhere in this file.
+//   5. Calendar dates (attendance, invoice due dates, holidays) are `@db.Date`.
+//      Audit and event instants are `@db.Timestamptz(3)`. The school's IANA
+//      timezone converts between them.
+//   6. Enum values are stable codes, not display text. Labels come from i18n
+//      keys in packages/shared. School-authored text (subject names, notice
+//      bodies) is data and is not translated by us.
+//   7. Soft delete = `deletedAt` + `deletedByUserId`. Financial records are
+//      never soft-deleted; they are reversed. Marks, fees and attendance also
+//      write to the append-only `AuditLog`.
+// ═══════════════════════════════════════════════════════════════════════════
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// ENUMS — codes only. Display strings live in i18n.
+// ═══════════════════════════════════════════════════════════════════════════
+
+enum Role {
+  SCHOOL_ADMIN
+  ACCOUNTS
+  TEACHER
+  PARENT
+  STUDENT
+  DRIVER
+}
+
+enum AcademicYearStatus {
+  PLANNING
+  ACTIVE
+  CLOSED
+}
+
+enum DayOfWeek {
+  MON
+  TUE
+  WED
+  THU
+  FRI
+  SAT
+  SUN
+}
+
+enum StudentStatus {
+  ACTIVE
+  WITHDRAWN
+  TRANSFERRED_OUT
+  GRADUATED
+}
+
+enum EnrolmentStatus {
+  ACTIVE
+  COMPLETED // year finished; student promoted or graduated
+  WITHDRAWN // left mid-year
+  TRANSFERRED_OUT
+}
+
+enum GuardianRelation {
+  FATHER
+  MOTHER
+  GUARDIAN
+  OTHER
+}
+
+enum StaffStatus {
+  ACTIVE
+  ON_LEAVE
+  RESIGNED
+  TERMINATED
+}
+
+/// Approved leave and unexplained absence must stay separable in every
+/// attendance percentage. Never collapse this to a boolean.
+enum AttendanceStatus {
+  PRESENT
+  ABSENT_UNEXPLAINED
+  ABSENT_APPROVED
+  LATE
+}
+
+enum LeaveStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  CANCELLED
+}
+
+/// Scope shared by holidays, closures and notices.
+enum AudienceScope {
+  SCHOOL
+  GRADE_LEVEL
+  SECTION
+}
+
+enum GradingScaleType {
+  PERCENTAGE // 0–100, bands optional
+  GPA // e.g. 4.0 scale, bands carry `points`
+  LETTER_BAND // A*–E, A–F, etc.
+  POINT_SCALE // 1–7 (IB), 1–9 (GCSE)
+  CUSTOM
+}
+
+/// How a raw mark becomes a percentage before band lookup.
+enum MarkAggregation {
+  BEST_OF
+  WEIGHTED_MEAN
+  SUM
+}
+
+enum FeeFrequency {
+  ONE_TIME
+  TERM
+  MONTHLY
+  ANNUAL
+}
+
+enum ConcessionType {
+  PERCENTAGE // basis points, see FeeConcession.valueBps
+  FIXED_AMOUNT // minor units
+}
+
+enum InvoiceStatus {
+  DRAFT
+  ISSUED
+  PARTIALLY_PAID
+  PAID
+  VOID
+}
+
+enum PaymentMethod {
+  CASH
+  CHEQUE
+  BANK_TRANSFER
+  OTHER
+}
+
+enum PaymentStatus {
+  RECORDED
+  BOUNCED // cheque returned
+  REVERSED // entry error, corrected by a reversing entry
+}
+
+enum DevicePlatform {
+  ANDROID
+  IOS
+  WEB
+}
+
+enum AuditAction {
+  CREATE
+  UPDATE
+  SOFT_DELETE
+  RESTORE
+  REVERSE
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// TENANT
+// ═══════════════════════════════════════════════════════════════════════════
+
+model School {
+  id   String @id @default(cuid())
+  /// Subdomain / login hint: greenhill → greenhill.hamro.school
+  slug String @unique
+
+  name      String
+  legalName String?
+
+  /// IANA zone, e.g. "Asia/Kathmandu". The only correct way to turn a
+  /// timestamptz into "which school day was that".
+  timezone String @default("UTC")
+
+  /// ISO 4217, e.g. "INR". `currencyMinorUnits` is the exponent: 2 for INR,
+  /// 0 for JPY/VND, 3 for KWD. Needed to render BigInt minor units correctly.
+  currency           String @default("USD")
+  currencyMinorUnits Int    @default(2)
+
+  /// BCP 47 default for the school's UI; individual users may override.
+  defaultLocale String @default("en")
+
+  /// Days the school normally operates. Mon–Fri is not universal — Gulf
+  /// schools run Sun–Thu. Drives the attendance denominator with holidays.
+  workingDays DayOfWeek[] @default([MON, TUE, WED, THU, FRI])
+
+  addressLine1 String?
+  addressLine2 String?
+  city         String?
+  state        String?
+  country      String? // ISO 3166-1 alpha-2
+  postalCode   String?
+  phone        String?
+  email        String?
+  logoUrl      String?
+
+  isActive  Boolean   @default(true)
+  createdAt DateTime  @default(now()) @db.Timestamptz(3)
+  updatedAt DateTime  @updatedAt @db.Timestamptz(3)
+  deletedAt DateTime? @db.Timestamptz(3)
+
+  academicYears        AcademicYear[]
+  users                User[]
+  roleAssignments      RoleAssignment[]
+  students             Student[]
+  guardians            Guardian[]
+  staff                StaffProfile[]
+  gradeLevels          GradeLevel[]
+  sections             Section[]
+  subjects             Subject[]
+  subjectOfferings     SubjectOffering[]
+  teachingAssignments  TeachingAssignment[]
+  periodSlots          PeriodSlot[]
+  timetableEntries     TimetableEntry[]
+  attendanceSessions   AttendanceSession[]
+  attendanceRecords    AttendanceRecord[]
+  holidays             Holiday[]
+  closures             Closure[]
+  studentLeaveRequests StudentLeaveRequest[]
+  staffLeaveRequests   StaffLeaveRequest[]
+  homeworkPosts        HomeworkPost[]
+  notices              Notice[]
+  exams                Exam[]
+  examSubjects         ExamSubject[]
+  marks                Mark[]
+  gradingScales        GradingScale[]
+  gradingAssignments   GradingScaleAssignment[]
+  reportCardRuns       ReportCardRun[]
+  feeStructures        FeeStructure[]
+  feeItems             FeeItem[]
+  feeConcessions       FeeConcession[]
+  invoices             Invoice[]
+  payments             Payment[]
+  deviceTokens         DeviceToken[]
+  auditLogs            AuditLog[]
+  enrolments           Enrolment[]
+  terms                Term[]
+
+  @@index([isActive])
+  @@map("schools")
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// ACADEMIC CALENDAR
+// ═══════════════════════════════════════════════════════════════════════════
+
+model AcademicYear {
+  id       String @id @default(cuid())
+  schoolId String
+  school   School @relation(fields: [schoolId], references: [id])
+
+  /// School-facing label: "2026–27", "2026". Free text; schools disagree.
+  name String
+
+  startDate DateTime @db.Date
+  endDate   DateTime @db.Date
+
+  status AcademicYearStatus @default(PLANNING)
+
+  /// Exactly one per school should be true; enforced in the service layer and
+  /// by a partial unique index in the migration.
+  isCurrent Boolean @default(false)
+
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @db.Timestamptz(3)
+
+  terms                Term[]
+  sections             Section[]
+  enrolments           Enrolment[]
+  subjectOfferings     SubjectOffering[]
+  teachingAssignments  TeachingAssignment[]
+  periodSlots          PeriodSlot[]
+  timetableEntries     TimetableEntry[]
+  attendanceSessions   AttendanceSession[]
+  holidays             Holiday[]
+  closures             Closure[]
+  studentLeaveRequests StudentLeaveRequest[]
+  homeworkPosts        HomeworkPost[]
+  notices              Notice[]
+  exams                Exam[]
+  gradingAssignments   GradingScaleAssignment[]
+  reportCardRuns       ReportCardRun[]
+  feeStructures        FeeStructure[]
+  invoices             Invoice[]
+
+  @@unique([schoolId, name])
+  @@index([schoolId, status])
+  @@map("academic_years")
+}
+
+model Term {
+  id             String       @id @default(cuid())
+  schoolId       String
+  school         School       @relation(fields: [schoolId], references: [id])
+  academicYearId String
+  academicYear   AcademicYear @relation(fields: [academicYearId], references: [id])
+
+  name      String // "Term 1", "Semester 2"
+  sequence  Int // 1-based ordering within the year
+  startDate DateTime @db.Date
+  endDate   DateTime @db.Date
+
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @db.Timestamptz(3)
+
+  exams          Exam[]
+  feeItems       FeeItem[]
+  invoices       Invoice[]
+  reportCardRuns ReportCardRun[]
+
+  @@unique([academicYearId, sequence])
+  @@index([schoolId, academicYearId])
+  @@map("terms")
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// IDENTITY — a person is a User. What they may do is a RoleAssignment.
+// One user can be a teacher and the parent of a student in the same school.
+// ═══════════════════════════════════════════════════════════════════════════
+
+model User {
+  id       String @id @default(cuid())
+  schoolId String
+  school   School @relation(fields: [schoolId], references: [id])
+
+  /// Unique per school, not globally: the same person at two schools has two
+  /// user rows. See decision doc — cross-school identity is deliberately out.
+  email String
+
+  /// argon2id. Null for accounts created by an admin that have not yet set a
+  /// password (invite flow) — such users cannot log in.
+  passwordHash String?
+
+  firstName String
+  lastName  String
+  phone     String?
+  avatarUrl String?
+
+  /// BCP 47 override of School.defaultLocale.
+  locale String?
+
+  emailVerifiedAt DateTime? @db.Timestamptz(3)
+  lastLoginAt     DateTime? @db.Timestamptz(3)
+  isActive        Boolean   @default(true)
+
+  /// Bumped on password change or forced logout; refresh tokens issued before
+  /// this instant are rejected.
+  credentialsValidFrom DateTime @default(now()) @db.Timestamptz(3)
+
+  createdAt DateTime  @default(now()) @db.Timestamptz(3)
+  updatedAt DateTime  @updatedAt @db.Timestamptz(3)
+  deletedAt DateTime? @db.Timestamptz(3)
+
+  roleAssignments       RoleAssignment[]
+  refreshTokens         RefreshToken[]
+  passwordResets        PasswordResetToken[]
+  deviceTokens          DeviceToken[]
+  studentProfile        Student?
+  guardianProfile       Guardian?
+  staffProfile          StaffProfile?
+  auditLogs             AuditLog[]
+  noticesAuthored       Notice[]              @relation("NoticeAuthor")
+  closuresDeclared      Closure[]             @relation("ClosureDeclaredBy")
+  attendanceTaken       AttendanceSession[]   @relation("AttendanceTakenBy")
+  attendanceEdits       AttendanceRecord[]    @relation("AttendanceRecordedBy")
+  marksEntered          Mark[]                @relation("MarkEnteredBy")
+  marksVerified         Mark[]                @relation("MarkVerifiedBy")
+  paymentsRecorded      Payment[]             @relation("PaymentRecordedBy")
+  studentLeaveDecisions StudentLeaveRequest[] @relation("StudentLeaveDecidedBy")
+  staffLeaveDecisions   StaffLeaveRequest[]   @relation("StaffLeaveDecidedBy")
+
+  @@unique([schoolId, email])
+  @@index([schoolId, isActive])
+  @@map("users")
+}
+
+/// Platform staff (us), deliberately outside School so no tenant-scoped query
+/// can accidentally grant cross-school access through the normal role path.
+model PlatformAdmin {
+  id           String   @id @default(cuid())
+  email        String   @unique
+  passwordHash String
+  name         String
+  isActive     Boolean  @default(true)
+  createdAt    DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt    DateTime @updatedAt @db.Timestamptz(3)
+
+  @@map("platform_admins")
+}
+
+/// A user holds one row per role they play. Scope narrows a role to a subject
+/// area later (e.g. a head of department); null scope means school-wide within
+/// that role's own permission set.
+model RoleAssignment {
+  id       String @id @default(cuid())
+  schoolId String
+  school   School @relation(fields: [schoolId], references: [id])
+  userId   String
+  user     User   @relation(fields: [userId], references: [id])
+
+  role Role
+
+  /// Optional: restrict a role to one academic year (e.g. a visiting teacher).
+  /// Null = applies to every year.
+  academicYearId String?
+
+  isActive  Boolean   @default(true)
+  createdAt DateTime  @default(now()) @db.Timestamptz(3)
+  updatedAt DateTime  @updatedAt @db.Timestamptz(3)
+  revokedAt DateTime? @db.Timestamptz(3)
+
+  @@unique([userId, role, academicYearId])
+  @@index([schoolId, role, isActive])
+  @@map("role_assignments")
+}
+
+model RefreshToken {
+  id       String @id @default(cuid())
+  schoolId String
+  userId   String
+  user     User   @relation(fields: [userId], references: [id])
+
+  /// SHA-256 of the token. The raw token is never stored.
+  tokenHash String @unique
+
+  /// Rotation chain: the token that replaced this one, for reuse detection.
+  replacedByTokenId String?       @unique
+  replacedByToken   RefreshToken? @relation("TokenRotation", fields: [replacedByTokenId], references: [id])
+  replaces          RefreshToken? @relation("TokenRotation")
+
+  expiresAt DateTime  @db.Timestamptz(3)
+  revokedAt DateTime? @db.Timestamptz(3)
+  userAgent String?
+  ipAddress String?
+
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+
+  @@index([userId, revokedAt])
+  @@index([expiresAt])
+  @@map("refresh_tokens")
+}
+
+model PasswordResetToken {
+  id        String    @id @default(cuid())
+  schoolId  String
+  userId    String
+  user      User      @relation(fields: [userId], references: [id])
+  tokenHash String    @unique
+  expiresAt DateTime  @db.Timestamptz(3)
+  usedAt    DateTime? @db.Timestamptz(3)
+  createdAt DateTime  @default(now()) @db.Timestamptz(3)
+
+  @@index([userId])
+  @@map("password_reset_tokens")
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// PEOPLE
+// ═══════════════════════════════════════════════════════════════════════════
+
+model Student {
+  id       String @id @default(cuid())
+  schoolId String
+  school   School @relation(fields: [schoolId], references: [id])
+
+  /// Optional login. Many schools never issue student accounts.
+  userId String? @unique
+  user   User?   @relation(fields: [userId], references: [id])
+
+  admissionNumber String
+  firstName       String
+  middleName      String?
+  lastName        String
+  /// Free text, not an enum: gender categories differ by country and schools
+  /// need to record what their government form asks for.
+  gender          String?
+  dateOfBirth     DateTime? @db.Date
+  admissionDate   DateTime? @db.Date
+  photoUrl        String?
+  bloodGroup      String?
+  nationality     String?
+  /// Government/board identifier where one exists.
+  nationalId      String?
+  medicalNotes    String?
+  address         String?
+
+  status     StudentStatus @default(ACTIVE)
+  exitedOn   DateTime?     @db.Date
+  exitReason String?
+
+  createdAt       DateTime  @default(now()) @db.Timestamptz(3)
+  updatedAt       DateTime  @updatedAt @db.Timestamptz(3)
+  deletedAt       DateTime? @db.Timestamptz(3)
+  deletedByUserId String?
+
+  enrolments     Enrolment[]
+  guardians      StudentGuardian[]
+  feeConcessions FeeConcession[]
+
+  @@unique([schoolId, admissionNumber])
+  @@index([schoolId, status])
+  @@index([schoolId, lastName, firstName])
+  @@map("students")
+}
+
+model Guardian {
+  id       String @id @default(cuid())
+  schoolId String
+  school   School @relation(fields: [schoolId], references: [id])
+
+  /// The parent app login. Null until the guardian is invited.
+  userId String? @unique
+  user   User?   @relation(fields: [userId], references: [id])
+
+  firstName  String
+  lastName   String
+  phone      String?
+  altPhone   String?
+  email      String?
+  occupation String?
+  address    String?
+  nationalId String?
+
+  createdAt       DateTime  @default(now()) @db.Timestamptz(3)
+  updatedAt       DateTime  @updatedAt @db.Timestamptz(3)
+  deletedAt       DateTime? @db.Timestamptz(3)
+  deletedByUserId String?
+
+  students StudentGuardian[]
+
+  @@index([schoolId, phone])
+  @@index([schoolId, lastName])
+  @@map("guardians")
+}
+
+/// Many-to-many: siblings share a guardian, a student may have several.
+model StudentGuardian {
+  id         String   @id @default(cuid())
+  schoolId   String
+  studentId  String
+  student    Student  @relation(fields: [studentId], references: [id])
+  guardianId String
+  guardian   Guardian @relation(fields: [guardianId], references: [id])
+
+  relation GuardianRelation @default(GUARDIAN)
+
+  /// The guardian invoices are addressed to and who is called first.
+  isPrimary             Boolean @default(false)
+  /// Separate from isPrimary: a non-primary guardian may still get FCM pushes.
+  receivesNotifications Boolean @default(true)
+  /// Authorised for pickup at the gate.
+  canPickUp             Boolean @default(true)
+  /// Some custody arrangements deny access to records.
+  canViewRecords        Boolean @default(true)
+
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @db.Timestamptz(3)
+
+  @@unique([studentId, guardianId])
+  @@index([schoolId, guardianId])
+  @@map("student_guardians")
+}
+
+/// Employment record. Teachers and drivers are both staff; what they may do
+/// comes from RoleAssignment, not from this table.
+model StaffProfile {
+  id       String @id @default(cuid())
+  schoolId String
+  school   School @relation(fields: [schoolId], references: [id])
+  userId   String @unique
+  user     User   @relation(fields: [userId], references: [id])
+
+  employeeCode  String
+  designation   String? // free text: "Head of Science", "Bus driver"
+  department    String?
+  joinedOn      DateTime? @db.Date
+  exitedOn      DateTime? @db.Date
+  qualification String?
+  /// For drivers; the licence is checked at hire, not by this system.
+  licenceNumber String?
+
+  status StaffStatus @default(ACTIVE)
+
+  createdAt       DateTime  @default(now()) @db.Timestamptz(3)
+  updatedAt       DateTime  @updatedAt @db.Timestamptz(3)
+  deletedAt       DateTime? @db.Timestamptz(3)
+  deletedByUserId String?
+
+  classTeacherOf      Section[]            @relation("ClassTeacher")
+  teachingAssignments TeachingAssignment[]
+  timetableEntries    TimetableEntry[]
+  homeworkPosts       HomeworkPost[]
+  leaveRequests       StaffLeaveRequest[]
+
+  @@unique([schoolId, employeeCode])
+  @@index([schoolId, status])
+  @@map("staff_profiles")
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// STRUCTURE — grade levels, sections, subjects
+//
+// Named GradeLevel, not Grade, so it is never confused with a grade letter
+// produced by the grading scale. Nothing in this codebase calls a letter a
+// "grade" in a type name.
+// ═══════════════════════════════════════════════════════════════════════════
+
+model GradeLevel {
+  id       String @id @default(cuid())
+  schoolId String
+  school   School @relation(fields: [schoolId], references: [id])
+
+  name  String // "Grade 6", "Year 7", "Class VI"
+  /// Ordering key and the basis of promotion: next grade = level + 1.
+  level Int
+  /// The stage a school reports on: "Primary", "Middle", "Secondary".
+  stage String?
+
+  createdAt DateTime  @default(now()) @db.Timestamptz(3)
+  updatedAt DateTime  @updatedAt @db.Timestamptz(3)
+  deletedAt DateTime? @db.Timestamptz(3)
+
+  sections           Section[]
+  enrolments         Enrolment[]
+  subjectOfferings   SubjectOffering[]
+  examSubjects       ExamSubject[]
+  feeStructures      FeeStructure[]
+  gradingAssignments GradingScaleAssignment[]
+  holidays           Holiday[]
+  closures           Closure[]
+  notices            Notice[]
+  reportCardRuns     ReportCardRun[]
+
+  @@unique([schoolId, level])
+  @@index([schoolId])
+  @@map("grade_levels")
+}
+
+/// Scoped to an academic year: 8A in 2026–27 is a different roster from 8A in
+/// 2025–26, and the class teacher changes.
+model Section {
+  id             String       @id @default(cuid())
+  schoolId       String
+  school         School       @relation(fields: [schoolId], references: [id])
+  academicYearId String
+  academicYear   AcademicYear @relation(fields: [academicYearId], references: [id])
+  gradeLevelId   String
+  gradeLevel     GradeLevel   @relation(fields: [gradeLevelId], references: [id])
+
+  name     String // "A", "Blue", "Alpha"
+  capacity Int?
+  room     String?
+
+  classTeacherId String?
+  classTeacher   StaffProfile? @relation("ClassTeacher", fields: [classTeacherId], references: [id])
+
+  createdAt DateTime  @default(now()) @db.Timestamptz(3)
+  updatedAt DateTime  @updatedAt @db.Timestamptz(3)
+  deletedAt DateTime? @db.Timestamptz(3)
+
+  enrolments          Enrolment[]
+  teachingAssignments TeachingAssignment[]
+  timetableEntries    TimetableEntry[]
+  attendanceSessions  AttendanceSession[]
+  homeworkPosts       HomeworkPost[]
+  notices             Notice[]
+  holidays            Holiday[]
+  closures            Closure[]
+
+  @@unique([academicYearId, gradeLevelId, name])
+  @@index([schoolId, academicYearId])
+  @@map("sections")
+}
+
+model Subject {
+  id       String @id @default(cuid())
+  schoolId String
+  school   School @relation(fields: [schoolId], references: [id])
+
+  code         String // "MATH", "ENG"
+  name         String // school-authored, shown as-is; not an i18n key
+  /// Subjects that carry no marks (assembly, library) still appear on a
+  /// timetable but must not create exam papers.
+  isExaminable Boolean @default(true)
+
+  createdAt DateTime  @default(now()) @db.Timestamptz(3)
+  updatedAt DateTime  @updatedAt @db.Timestamptz(3)
+  deletedAt DateTime? @db.Timestamptz(3)
+
+  offerings           SubjectOffering[]
+  teachingAssignments TeachingAssignment[]
+  timetableEntries    TimetableEntry[]
+  homeworkPosts       HomeworkPost[]
+  examSubjects        ExamSubject[]
+  gradingAssignments  GradingScaleAssignment[]
+
+  @@unique([schoolId, code])
+  @@index([schoolId])
+  @@map("subjects")
+}
+
+/// Which subjects a grade level studies in a given year, and how much each one
+/// counts. Curricula change between years; this is why it is not a column.
+model SubjectOffering {
+  id             String       @id @default(cuid())
+  schoolId       String
+  school         School       @relation(fields: [schoolId], references: [id])
+  academicYearId String
+  academicYear   AcademicYear @relation(fields: [academicYearId], references: [id])
+  gradeLevelId   String
+  gradeLevel     GradeLevel   @relation(fields: [gradeLevelId], references: [id])
+  subjectId      String
+  subject        Subject      @relation(fields: [subjectId], references: [id])
+
+  isElective Boolean @default(false)
+  /// Relative weight in a term aggregate, in basis points (10000 = 1.0).
+  /// Integer, so no float creeps into report card arithmetic.
+  weightBps  Int     @default(10000)
+
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @db.Timestamptz(3)
+
+  @@unique([academicYearId, gradeLevelId, subjectId])
+  @@index([schoolId, academicYearId])
+  @@map("subject_offerings")
+}
+
+/// Teacher teaches subject to section, for a year. Drives "a teacher reads
+/// only their own classes" in the policy layer.
+model TeachingAssignment {
+  id             String       @id @default(cuid())
+  schoolId       String
+  school         School       @relation(fields: [schoolId], references: [id])
+  academicYearId String
+  academicYear   AcademicYear @relation(fields: [academicYearId], references: [id])
+  staffId        String
+  staff          StaffProfile @relation(fields: [staffId], references: [id])
+  sectionId      String
+  section        Section      @relation(fields: [sectionId], references: [id])
+  subjectId      String
+  subject        Subject      @relation(fields: [subjectId], references: [id])
+
+  /// A co-teacher may see the class but not enter final marks.
+  canEnterMarks Boolean @default(true)
+
+  createdAt DateTime  @default(now()) @db.Timestamptz(3)
+  updatedAt DateTime  @updatedAt @db.Timestamptz(3)
+  deletedAt DateTime? @db.Timestamptz(3)
+
+  @@unique([sectionId, subjectId, staffId])
+  @@index([schoolId, academicYearId, staffId])
+  @@map("teaching_assignments")
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// ENROLMENT — the spine. Everything a student does in a year hangs off this.
+// ═══════════════════════════════════════════════════════════════════════════
+
+model Enrolment {
+  id             String       @id @default(cuid())
+  schoolId       String
+  school         School       @relation(fields: [schoolId], references: [id])
+  academicYearId String
+  academicYear   AcademicYear @relation(fields: [academicYearId], references: [id])
+  studentId      String
+  student        Student      @relation(fields: [studentId], references: [id])
+  gradeLevelId   String
+  gradeLevel     GradeLevel   @relation(fields: [gradeLevelId], references: [id])
+  sectionId      String
+  section        Section      @relation(fields: [sectionId], references: [id])
+
+  /// Unique within the section; schools sort registers by it.
+  rollNumber Int
+
+  status     EnrolmentStatus @default(ACTIVE)
+  enrolledOn DateTime        @db.Date
+  exitedOn   DateTime?       @db.Date
+
+  /// Set by the promotion run at year close, so a report card can say where
+  /// the student went next without recomputing.
+  promotedToEnrolmentId String?    @unique
+  promotedTo            Enrolment? @relation("Promotion", fields: [promotedToEnrolmentId], references: [id])
+  promotedFrom          Enrolment? @relation("Promotion")
+
+  createdAt DateTime  @default(now()) @db.Timestamptz(3)
+  updatedAt DateTime  @updatedAt @db.Timestamptz(3)
+  deletedAt DateTime? @db.Timestamptz(3)
+
+  attendanceRecords AttendanceRecord[]
+  marks             Mark[]
+  invoices          Invoice[]
+  leaveRequests     StudentLeaveRequest[]
+  feeConcessions    FeeConcession[]
+
+  @@unique([academicYearId, studentId])
+  @@unique([sectionId, rollNumber])
+  @@index([schoolId, academicYearId, sectionId])
+  @@index([schoolId, studentId])
+  @@map("enrolments")
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// TIMETABLE
+// ═══════════════════════════════════════════════════════════════════════════
+
+/// The bell schedule: period 1 is 08:00–08:45 for the whole school. Separated
+/// from TimetableEntry so changing the bell does not rewrite every entry.
+model PeriodSlot {
+  id             String       @id @default(cuid())
+  schoolId       String
+  school         School       @relation(fields: [schoolId], references: [id])
+  academicYearId String
+  academicYear   AcademicYear @relation(fields: [academicYearId], references: [id])
+
+  name       String // "Period 1", "Break"
+  sequence   Int
+  startTime  DateTime @db.Time(0)
+  endTime    DateTime @db.Time(0)
+  /// Breaks and assembly occupy the grid but hold no subject.
+  isTeaching Boolean  @default(true)
+
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @db.Timestamptz(3)
+
+  timetableEntries   TimetableEntry[]
+  attendanceSessions AttendanceSession[]
+
+  @@unique([academicYearId, sequence])
+  @@index([schoolId, academicYearId])
+  @@map("period_slots")
+}
+
+model TimetableEntry {
+  id             String        @id @default(cuid())
+  schoolId       String
+  school         School        @relation(fields: [schoolId], references: [id])
+  academicYearId String
+  academicYear   AcademicYear  @relation(fields: [academicYearId], references: [id])
+  sectionId      String
+  section        Section       @relation(fields: [sectionId], references: [id])
+  periodSlotId   String
+  periodSlot     PeriodSlot    @relation(fields: [periodSlotId], references: [id])
+  subjectId      String
+  subject        Subject       @relation(fields: [subjectId], references: [id])
+  staffId        String?
+  staff          StaffProfile? @relation(fields: [staffId], references: [id])
+
+  dayOfWeek DayOfWeek
+  room      String?
+
+  /// Timetables change mid-year. Effective dating keeps last month's timetable
+  /// resolvable instead of overwriting it.
+  effectiveFrom DateTime  @db.Date
+  effectiveTo   DateTime? @db.Date
+
+  createdAt DateTime  @default(now()) @db.Timestamptz(3)
+  updatedAt DateTime  @updatedAt @db.Timestamptz(3)
+  deletedAt DateTime? @db.Timestamptz(3)
+
+  @@index([schoolId, academicYearId, sectionId, dayOfWeek])
+  @@index([schoolId, staffId, dayOfWeek])
+  @@map("timetable_entries")
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// ATTENDANCE
+//
+// A session records that attendance WAS taken for a section on a local date.
+// Without it, "no records" is ambiguous between "holiday", "not taken yet" and
+// "everyone present" — and the attendance denominator is unrecoverable.
+//
+// On a holiday or closure no session exists, so the day leaves the denominator
+// entirely rather than being marked absent.
+// ═══════════════════════════════════════════════════════════════════════════
+
+model AttendanceSession {
+  id             String       @id @default(cuid())
+  schoolId       String
+  school         School       @relation(fields: [schoolId], references: [id])
+  academicYearId String
+  academicYear   AcademicYear @relation(fields: [academicYearId], references: [id])
+  sectionId      String
+  section        Section      @relation(fields: [sectionId], references: [id])
+
+  /// Local calendar date in School.timezone. Never a UTC instant.
+  date DateTime @db.Date
+
+  /// Null for once-a-day attendance. Set when a school moves to per-period
+  /// attendance, without a migration of the uniqueness rule.
+  periodSlotId String?
+  periodSlot   PeriodSlot? @relation(fields: [periodSlotId], references: [id])
+  /// Discriminator that makes the unique key work with a null period, since
+  /// Postgres treats NULLs as distinct. "DAY" for daily attendance.
+  sessionKey   String      @default("DAY")
+
+  takenByUserId String?
+  takenBy       User?     @relation("AttendanceTakenBy", fields: [takenByUserId], references: [id])
+  submittedAt   DateTime? @db.Timestamptz(3)
+  /// Set once the day is closed for edits; later corrections need an admin and
+  /// always write an audit entry.
+  lockedAt      DateTime? @db.Timestamptz(3)
+
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @db.Timestamptz(3)
+
+  records AttendanceRecord[]
+
+  @@unique([sectionId, date, sessionKey])
+  @@index([schoolId, academicYearId, date])
+  @@map("attendance_sessions")
+}
+
+model AttendanceRecord {
+  id          String            @id @default(cuid())
+  schoolId    String
+  school      School            @relation(fields: [schoolId], references: [id])
+  sessionId   String
+  session     AttendanceSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  enrolmentId String
+  enrolment   Enrolment         @relation(fields: [enrolmentId], references: [id])
+
+  /// Denormalised from the session so attendance percentages can be computed
+  /// without a join. Kept in sync by the repository layer.
+  date DateTime @db.Date
+
+  status AttendanceStatus
+
+  /// Set when the status came from an approved StudentLeaveRequest, so an
+  /// approved absence can be traced to its authorisation.
+  leaveRequestId String?
+  leaveRequest   StudentLeaveRequest? @relation(fields: [leaveRequestId], references: [id])
+
+  /// Minutes late; only meaningful for LATE.
+  minutesLate Int?
+  remark      String?
+
+  recordedByUserId String?
+  recordedBy       User?   @relation("AttendanceRecordedBy", fields: [recordedByUserId], references: [id])
+
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @db.Timestamptz(3)
+
+  @@unique([sessionId, enrolmentId])
+  @@index([schoolId, enrolmentId, date])
+  @@index([schoolId, date, status])
+  @@map("attendance_records")
+}
+
+/// Planned non-instructional days. Excluded from the attendance denominator.
+model Holiday {
+  id             String       @id @default(cuid())
+  schoolId       String
+  school         School       @relation(fields: [schoolId], references: [id])
+  academicYearId String
+  academicYear   AcademicYear @relation(fields: [academicYearId], references: [id])
+
+  name      String
+  startDate DateTime @db.Date
+  endDate   DateTime @db.Date // inclusive; equal to startDate for one day
+
+  scope        AudienceScope @default(SCHOOL)
+  gradeLevelId String?
+  gradeLevel   GradeLevel?   @relation(fields: [gradeLevelId], references: [id])
+  sectionId    String?
+  section      Section?      @relation(fields: [sectionId], references: [id])
+
+  createdAt DateTime  @default(now()) @db.Timestamptz(3)
+  updatedAt DateTime  @updatedAt @db.Timestamptz(3)
+  deletedAt DateTime? @db.Timestamptz(3)
+
+  @@index([schoolId, academicYearId, startDate])
+  @@map("holidays")
+}
+
+/// Unplanned: strike, flood, snow. Same effect on the denominator as a
+/// holiday, but declared same-day, by a named person, and usually pushed.
+model Closure {
+  id             String       @id @default(cuid())
+  schoolId       String
+  school         School       @relation(fields: [schoolId], references: [id])
+  academicYearId String
+  academicYear   AcademicYear @relation(fields: [academicYearId], references: [id])
+
+  reason    String
+  startDate DateTime @db.Date
+  endDate   DateTime @db.Date
+
+  scope        AudienceScope @default(SCHOOL)
+  gradeLevelId String?
+  gradeLevel   GradeLevel?   @relation(fields: [gradeLevelId], references: [id])
+  sectionId    String?
+  section      Section?      @relation(fields: [sectionId], references: [id])
+
+  declaredByUserId String?
+  declaredBy       User?     @relation("ClosureDeclaredBy", fields: [declaredByUserId], references: [id])
+  notifiedAt       DateTime? @db.Timestamptz(3)
+
+  createdAt DateTime  @default(now()) @db.Timestamptz(3)
+  updatedAt DateTime  @updatedAt @db.Timestamptz(3)
+  deletedAt DateTime? @db.Timestamptz(3)
+
+  @@index([schoolId, academicYearId, startDate])
+  @@map("closures")
+}
+
+/// Student leave. Approval is what turns an absence into ABSENT_APPROVED.
+model StudentLeaveRequest {
+  id             String       @id @default(cuid())
+  schoolId       String
+  school         School       @relation(fields: [schoolId], references: [id])
+  academicYearId String
+  academicYear   AcademicYear @relation(fields: [academicYearId], references: [id])
+  enrolmentId    String
+  enrolment      Enrolment    @relation(fields: [enrolmentId], references: [id])
+
+  startDate     DateTime @db.Date
+  endDate       DateTime @db.Date
+  reason        String
+  /// Doctor's note, etc. Storage backend decided at implementation time.
+  attachmentUrl String?
+
+  /// Which guardian or staff member raised it.
+  requestedByUserId String
+
+  status          LeaveStatus @default(PENDING)
+  decidedByUserId String?
+  decidedBy       User?       @relation("StudentLeaveDecidedBy", fields: [decidedByUserId], references: [id])
+  decidedAt       DateTime?   @db.Timestamptz(3)
+  decisionNote    String?
+
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @db.Timestamptz(3)
+
+  attendanceRecords AttendanceRecord[]
+
+  @@index([schoolId, enrolmentId, startDate])
+  @@index([schoolId, status])
+  @@map("student_leave_requests")
+}
+
+/// Staff leave is a different problem from student leave — it needs cover, not
+/// an attendance status — so it is a separate table rather than a shared one
+/// with nullable halves.
+model StaffLeaveRequest {
+  id       String       @id @default(cuid())
+  schoolId String
+  school   School       @relation(fields: [schoolId], references: [id])
+  staffId  String
+  staff    StaffProfile @relation(fields: [staffId], references: [id])
+
+  startDate DateTime @db.Date
+  endDate   DateTime @db.Date
+  /// "SICK", "CASUAL", "UNPAID" — school-configurable string, not an enum.
+  leaveType String
+  reason    String?
+
+  status          LeaveStatus @default(PENDING)
+  decidedByUserId String?
+  decidedBy       User?       @relation("StaffLeaveDecidedBy", fields: [decidedByUserId], references: [id])
+  decidedAt       DateTime?   @db.Timestamptz(3)
+  decisionNote    String?
+
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @db.Timestamptz(3)
+
+  @@index([schoolId, staffId, startDate])
+  @@map("staff_leave_requests")
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// COMMUNICATION
+// ═══════════════════════════════════════════════════════════════════════════
+
+model HomeworkPost {
+  id              String       @id @default(cuid())
+  schoolId        String
+  school          School       @relation(fields: [schoolId], references: [id])
+  academicYearId  String
+  academicYear    AcademicYear @relation(fields: [academicYearId], references: [id])
+  sectionId       String
+  section         Section      @relation(fields: [sectionId], references: [id])
+  subjectId       String
+  subject         Subject      @relation(fields: [subjectId], references: [id])
+  postedByStaffId String
+  postedBy        StaffProfile @relation(fields: [postedByStaffId], references: [id])
+
+  title   String?
+  body    String
+  /// Local date, not an instant: "due tomorrow" is a school-day concept.
+  dueDate DateTime @db.Date
+
+  attachments Json? // [{ url, name, sizeBytes, mimeType }]
+
+  publishedAt        DateTime? @db.Timestamptz(3)
+  notifyGuardians    Boolean   @default(true)
+  notificationSentAt DateTime? @db.Timestamptz(3)
+  /// Evening-before reminder; null once sent or if disabled.
+  reminderDueAt      DateTime? @db.Timestamptz(3)
+
+  createdAt DateTime  @default(now()) @db.Timestamptz(3)
+  updatedAt DateTime  @updatedAt @db.Timestamptz(3)
+  deletedAt DateTime? @db.Timestamptz(3)
+
+  @@index([schoolId, sectionId, dueDate])
+  @@index([schoolId, academicYearId, publishedAt])
+  @@map("homework_posts")
+}
+
+model Notice {
+  id             String        @id @default(cuid())
+  schoolId       String
+  school         School        @relation(fields: [schoolId], references: [id])
+  academicYearId String?
+  academicYear   AcademicYear? @relation(fields: [academicYearId], references: [id])
+
+  title String
+  body  String
+
+  scope         AudienceScope @default(SCHOOL)
+  gradeLevelId  String?
+  gradeLevel    GradeLevel?   @relation(fields: [gradeLevelId], references: [id])
+  sectionId     String?
+  section       Section?      @relation(fields: [sectionId], references: [id])
+  /// Additionally restrict to roles, e.g. teachers only. Empty = everyone in
+  /// scope.
+  audienceRoles Role[]        @default([])
+
+  attachments Json?
+
+  publishedAt        DateTime? @db.Timestamptz(3)
+  expiresAt          DateTime? @db.Timestamptz(3)
+  isPinned           Boolean   @default(false)
+  notificationSentAt DateTime? @db.Timestamptz(3)
+
+  authorUserId String
+  author       User   @relation("NoticeAuthor", fields: [authorUserId], references: [id])
+
+  createdAt DateTime  @default(now()) @db.Timestamptz(3)
+  updatedAt DateTime  @updatedAt @db.Timestamptz(3)
+  deletedAt DateTime? @db.Timestamptz(3)
+
+  @@index([schoolId, publishedAt])
+  @@map("notices")
+}
+
+model DeviceToken {
+  id       String @id @default(cuid())
+  schoolId String
+  school   School @relation(fields: [schoolId], references: [id])
+  userId   String
+  user     User   @relation(fields: [userId], references: [id])
+
+  /// FCM registration token. Unique globally — FCM reassigns a token to a new
+  /// install, and the old row must be replaced, not duplicated.
+  token       String         @unique
+  platform    DevicePlatform
+  appVersion  String?
+  deviceModel String?
+  /// Push language; falls back to User.locale.
+  locale      String?
+
+  lastSeenAt DateTime  @default(now()) @db.Timestamptz(3)
+  revokedAt  DateTime? @db.Timestamptz(3)
+
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @db.Timestamptz(3)
+
+  @@index([schoolId, userId, revokedAt])
+  @@map("device_tokens")
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// ASSESSMENT
+//
+// Raw marks only. No letter, band, GPA, average or rank is stored anywhere.
+// A published report card pins a GradingScaleVersion so that editing a scale
+// next year cannot silently rewrite last year's results.
+// ═══════════════════════════════════════════════════════════════════════════
+
+model Exam {
+  id             String       @id @default(cuid())
+  schoolId       String
+  school         School       @relation(fields: [schoolId], references: [id])
+  academicYearId String
+  academicYear   AcademicYear @relation(fields: [academicYearId], references: [id])
+  termId         String?
+  term           Term?        @relation(fields: [termId], references: [id])
+
+  name      String // "Mid-term", "Unit Test 2"
+  /// School-defined category used for weighting: "UNIT_TEST", "FINAL".
+  category  String?
+  /// Contribution to the term aggregate, in basis points.
+  weightBps Int     @default(10000)
+
+  startDate DateTime? @db.Date
+  endDate   DateTime? @db.Date
+
+  /// Marks cannot be edited after this without an admin override + audit row.
+  marksLockedAt      DateTime? @db.Timestamptz(3)
+  /// Visible to guardians from this instant.
+  resultsPublishedAt DateTime? @db.Timestamptz(3)
+
+  createdAt DateTime  @default(now()) @db.Timestamptz(3)
+  updatedAt DateTime  @updatedAt @db.Timestamptz(3)
+  deletedAt DateTime? @db.Timestamptz(3)
+
+  examSubjects ExamSubject[]
+
+  @@unique([academicYearId, name])
+  @@index([schoolId, academicYearId])
+  @@map("exams")
+}
+
+/// One paper: a subject, sat by a grade level, out of a maximum.
+model ExamSubject {
+  id           String     @id @default(cuid())
+  schoolId     String
+  school       School     @relation(fields: [schoolId], references: [id])
+  examId       String
+  exam         Exam       @relation(fields: [examId], references: [id])
+  subjectId    String
+  subject      Subject    @relation(fields: [subjectId], references: [id])
+  gradeLevelId String
+  gradeLevel   GradeLevel @relation(fields: [gradeLevelId], references: [id])
+
+  /// Exact decimal, never a float. Half marks are routine.
+  maxMarks  Decimal  @db.Decimal(7, 2)
+  passMarks Decimal? @db.Decimal(7, 2)
+  /// Weight of this paper within its subject for the term aggregate.
+  weightBps Int      @default(10000)
+
+  examDate DateTime? @db.Date
+
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @db.Timestamptz(3)
+
+  marks Mark[]
+
+  @@unique([examId, subjectId, gradeLevelId])
+  @@index([schoolId, examId])
+  @@map("exam_subjects")
+}
+
+model Mark {
+  id            String      @id @default(cuid())
+  schoolId      String
+  school        School      @relation(fields: [schoolId], references: [id])
+  examSubjectId String
+  examSubject   ExamSubject @relation(fields: [examSubjectId], references: [id])
+  enrolmentId   String
+  enrolment     Enrolment   @relation(fields: [enrolmentId], references: [id])
+
+  /// The only thing stored. Null when absent or exempt.
+  rawMarks Decimal? @db.Decimal(7, 2)
+
+  /// Absent sits in the numerator as zero or is excluded, depending on the
+  /// school's policy — a read-time decision, not a stored one.
+  isAbsent Boolean @default(false)
+  /// Exempt (e.g. did not take the elective) always leaves the denominator.
+  isExempt Boolean @default(false)
+
+  remark String?
+
+  enteredByUserId  String?
+  enteredBy        User?     @relation("MarkEnteredBy", fields: [enteredByUserId], references: [id])
+  verifiedByUserId String?
+  verifiedBy       User?     @relation("MarkVerifiedBy", fields: [verifiedByUserId], references: [id])
+  verifiedAt       DateTime? @db.Timestamptz(3)
+
+  createdAt DateTime  @default(now()) @db.Timestamptz(3)
+  updatedAt DateTime  @updatedAt @db.Timestamptz(3)
+  deletedAt DateTime? @db.Timestamptz(3)
+
+  @@unique([examSubjectId, enrolmentId])
+  @@index([schoolId, enrolmentId])
+  @@map("marks")
+}
+
+/// A named scale. Its bands live in versions so that a scale can be corrected
+/// without altering results already published under the old boundaries.
+model GradingScale {
+  id               String           @id @default(cuid())
+  schoolId         String
+  school           School           @relation(fields: [schoolId], references: [id])
+  name             String
+  type             GradingScaleType
+  /// How several papers combine into the figure the bands are looked up on.
+  aggregation      MarkAggregation  @default(WEIGHTED_MEAN)
+  /// Decimal places to round the computed percentage to before band lookup.
+  /// A boundary case (79.995 → A or B) must be decided by data, not by code.
+  roundingDecimals Int              @default(2)
+
+  createdAt DateTime  @default(now()) @db.Timestamptz(3)
+  updatedAt DateTime  @updatedAt @db.Timestamptz(3)
+  deletedAt DateTime? @db.Timestamptz(3)
+
+  versions    GradingScaleVersion[]
+  assignments GradingScaleAssignment[]
+
+  @@unique([schoolId, name])
+  @@map("grading_scales")
+}
+
+model GradingScaleVersion {
+  id             String       @id @default(cuid())
+  schoolId       String
+  gradingScaleId String
+  gradingScale   GradingScale @relation(fields: [gradingScaleId], references: [id])
+
+  version     Int
+  /// Immutable once published; edits create a new version.
+  publishedAt DateTime? @db.Timestamptz(3)
+  note        String?
+
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+
+  bands          GradingBand[]
+  assignments    GradingScaleAssignment[]
+  reportCardRuns ReportCardRun[]
+
+  @@unique([gradingScaleId, version])
+  @@map("grading_scale_versions")
+}
+
+/// One row per band. Every boundary, letter and point value is data here —
+/// none of it appears in the codebase.
+model GradingBand {
+  id        String              @id @default(cuid())
+  schoolId  String
+  versionId String
+  version   GradingScaleVersion @relation(fields: [versionId], references: [id], onDelete: Cascade)
+
+  /// Percentage window, inclusive of min, exclusive of max, except for the top
+  /// band which includes 100. Stored exact.
+  minPercent Decimal @db.Decimal(6, 3)
+  maxPercent Decimal @db.Decimal(6, 3)
+
+  /// What the school calls it: "A*", "Distinction", "7". Displayed verbatim;
+  /// not an i18n key, because it is the school's own vocabulary.
+  label       String
+  description String?
+  /// GPA points, if the scale carries them.
+  points      Decimal? @db.Decimal(5, 3)
+  isPass      Boolean  @default(true)
+  /// Display order, highest band first.
+  sequence    Int
+
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+
+  @@unique([versionId, sequence])
+  @@index([versionId])
+  @@map("grading_bands")
+}
+
+/// Which scale applies where. Most specific match wins:
+/// subject+grade → grade → school-wide (both null).
+model GradingScaleAssignment {
+  id             String               @id @default(cuid())
+  schoolId       String
+  school         School               @relation(fields: [schoolId], references: [id])
+  academicYearId String
+  academicYear   AcademicYear         @relation(fields: [academicYearId], references: [id])
+  gradingScaleId String
+  gradingScale   GradingScale         @relation(fields: [gradingScaleId], references: [id])
+  /// Pinned version; null means "always the latest published version".
+  versionId      String?
+  version        GradingScaleVersion? @relation(fields: [versionId], references: [id])
+
+  gradeLevelId String?
+  gradeLevel   GradeLevel? @relation(fields: [gradeLevelId], references: [id])
+  subjectId    String?
+  subject      Subject?    @relation(fields: [subjectId], references: [id])
+
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @db.Timestamptz(3)
+
+  @@unique([academicYearId, gradeLevelId, subjectId])
+  @@index([schoolId, academicYearId])
+  @@map("grading_scale_assignments")
+}
+
+/// A report card publication. Pins the scale version used, so reprinting an
+/// old report card gives the same letters it gave the day it was issued.
+/// The card itself is still computed from raw marks — nothing is denormalised.
+model ReportCardRun {
+  id             String       @id @default(cuid())
+  schoolId       String
+  school         School       @relation(fields: [schoolId], references: [id])
+  academicYearId String
+  academicYear   AcademicYear @relation(fields: [academicYearId], references: [id])
+  termId         String?
+  term           Term?        @relation(fields: [termId], references: [id])
+  gradeLevelId   String
+  gradeLevel     GradeLevel   @relation(fields: [gradeLevelId], references: [id])
+
+  gradingScaleVersionId String
+  gradingScaleVersion   GradingScaleVersion @relation(fields: [gradingScaleVersionId], references: [id])
+
+  /// Exams included in this card, and their weights at publication time.
+  examWeights Json
+
+  publishedAt DateTime? @db.Timestamptz(3)
+
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @db.Timestamptz(3)
+
+  @@unique([academicYearId, termId, gradeLevelId])
+  @@index([schoolId, academicYearId])
+  @@map("report_card_runs")
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// FEES — tracked, not processed. No gateway. All amounts are BigInt minor
+// units in School.currency.
+// ═══════════════════════════════════════════════════════════════════════════
+
+model FeeStructure {
+  id             String       @id @default(cuid())
+  schoolId       String
+  school         School       @relation(fields: [schoolId], references: [id])
+  academicYearId String
+  academicYear   AcademicYear @relation(fields: [academicYearId], references: [id])
+  /// Null = applies to every grade level.
+  gradeLevelId   String?
+  gradeLevel     GradeLevel?  @relation(fields: [gradeLevelId], references: [id])
+
+  name     String
+  isActive Boolean @default(true)
+
+  createdAt DateTime  @default(now()) @db.Timestamptz(3)
+  updatedAt DateTime  @updatedAt @db.Timestamptz(3)
+  deletedAt DateTime? @db.Timestamptz(3)
+
+  items FeeItem[]
+
+  @@unique([academicYearId, gradeLevelId, name])
+  @@index([schoolId, academicYearId])
+  @@map("fee_structures")
+}
+
+model FeeItem {
+  id             String       @id @default(cuid())
+  schoolId       String
+  school         School       @relation(fields: [schoolId], references: [id])
+  feeStructureId String
+  feeStructure   FeeStructure @relation(fields: [feeStructureId], references: [id])
+  /// Set for TERM frequency items billed in a specific term.
+  termId         String?
+  term           Term?        @relation(fields: [termId], references: [id])
+
+  name     String // "Tuition", "Transport", "Lab"
+  /// Reporting bucket: "TUITION", "TRANSPORT", "OPTIONAL".
+  category String?
+
+  /// Minor units. BigInt, not Int: a 32-bit int overflows at ~21M major units
+  /// in a 2-decimal currency, and low-denomination currencies get there.
+  amountMinor BigInt
+  frequency   FeeFrequency @default(TERM)
+
+  /// Optional items (transport, lunch) are billed only if the student opted in.
+  isOptional Boolean @default(false)
+
+  createdAt DateTime  @default(now()) @db.Timestamptz(3)
+  updatedAt DateTime  @updatedAt @db.Timestamptz(3)
+  deletedAt DateTime? @db.Timestamptz(3)
+
+  invoiceLines InvoiceLine[]
+  concessions  FeeConcession[]
+
+  @@index([schoolId, feeStructureId])
+  @@map("fee_items")
+}
+
+/// Scholarships, sibling discounts, staff-child waivers. Applied when an
+/// invoice is generated; the resulting amount is written to the invoice so the
+/// invoice stays a fixed record of what was billed.
+model FeeConcession {
+  id       String @id @default(cuid())
+  schoolId String
+  school   School @relation(fields: [schoolId], references: [id])
+
+  studentId   String
+  student     Student    @relation(fields: [studentId], references: [id])
+  /// Null = applies for as long as it is active, across years.
+  enrolmentId String?
+  enrolment   Enrolment? @relation(fields: [enrolmentId], references: [id])
+  /// Null = applies to the whole invoice.
+  feeItemId   String?
+  feeItem     FeeItem?   @relation(fields: [feeItemId], references: [id])
+
+  name String // "Sibling discount", "Merit scholarship"
+  type ConcessionType
+
+  /// Basis points for PERCENTAGE (2500 = 25%). Integer — percentages of money
+  /// must never be computed from a float.
+  valueBps   Int?
+  /// Minor units for FIXED_AMOUNT.
+  valueMinor BigInt?
+
+  validFrom DateTime  @db.Date
+  validTo   DateTime? @db.Date
+  isActive  Boolean   @default(true)
+
+  createdAt DateTime  @default(now()) @db.Timestamptz(3)
+  updatedAt DateTime  @updatedAt @db.Timestamptz(3)
+  deletedAt DateTime? @db.Timestamptz(3)
+
+  @@index([schoolId, studentId])
+  @@map("fee_concessions")
+}
+
+model Invoice {
+  id             String       @id @default(cuid())
+  schoolId       String
+  school         School       @relation(fields: [schoolId], references: [id])
+  academicYearId String
+  academicYear   AcademicYear @relation(fields: [academicYearId], references: [id])
+  enrolmentId    String
+  enrolment      Enrolment    @relation(fields: [enrolmentId], references: [id])
+  termId         String?
+  term           Term?        @relation(fields: [termId], references: [id])
+
+  /// Human-facing, sequential per school per year. Generated in a transaction.
+  number String
+
+  issueDate DateTime @db.Date
+  dueDate   DateTime @db.Date
+
+  /// Copied from the school at issue time: a school changing currency must not
+  /// reinterpret historical invoices.
+  currency String
+
+  /// Sums of the lines, held for query speed and reconciled by a check job.
+  subtotalMinor   BigInt @default(0)
+  concessionMinor BigInt @default(0)
+  totalMinor      BigInt @default(0)
+  /// Maintained from allocations; the source of truth for "what is due".
+  paidMinor       BigInt @default(0)
+
+  status InvoiceStatus @default(DRAFT)
+  notes  String?
+
+  /// OVERDUE is derived from dueDate and paidMinor at read time, never stored
+  /// — otherwise it needs a nightly job to stay honest.
+  voidedAt       DateTime? @db.Timestamptz(3)
+  voidReason     String?
+  lastRemindedAt DateTime? @db.Timestamptz(3)
+
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @db.Timestamptz(3)
+
+  lines       InvoiceLine[]
+  allocations PaymentAllocation[]
+
+  @@unique([schoolId, number])
+  @@index([schoolId, enrolmentId])
+  @@index([schoolId, academicYearId, status, dueDate])
+  @@map("invoices")
+}
+
+model InvoiceLine {
+  id        String   @id @default(cuid())
+  schoolId  String
+  invoiceId String
+  invoice   Invoice  @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+  /// Null if the fee item was deleted or the line was added ad hoc.
+  feeItemId String?
+  feeItem   FeeItem? @relation(fields: [feeItemId], references: [id])
+
+  /// Snapshot of the item name at issue time. Renaming a fee item must not
+  /// change what an old invoice says.
+  description     String
+  quantity        Int    @default(1)
+  unitAmountMinor BigInt
+  concessionMinor BigInt @default(0)
+  lineTotalMinor  BigInt
+
+  sequence Int
+
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+
+  @@index([invoiceId])
+  @@map("invoice_lines")
+}
+
+/// Money received at the counter. Never deleted — a wrong entry is REVERSED by
+/// a second row that points back at it.
+model Payment {
+  id       String @id @default(cuid())
+  schoolId String
+  school   School @relation(fields: [schoolId], references: [id])
+
+  /// Sequential per school. What the parent's receipt says.
+  receiptNumber String
+
+  /// Payments attach to the student, then get allocated across invoices — a
+  /// parent paying for two terms at once is one payment, two allocations.
+  enrolmentId String
+
+  amountMinor BigInt
+  currency    String
+  method      PaymentMethod
+  /// Cheque number, transfer UTR, or blank for cash.
+  reference   String?
+  /// Local date the office received it, which is not the instant it was keyed.
+  receivedOn  DateTime      @db.Date
+  /// Cheques clear later; dues chasing uses this.
+  clearedOn   DateTime?     @db.Date
+
+  status            PaymentStatus @default(RECORDED)
+  /// Set on the reversing row, pointing at the payment it cancels.
+  reversesPaymentId String?       @unique
+  reversesPayment   Payment?      @relation("PaymentReversal", fields: [reversesPaymentId], references: [id])
+  reversedBy        Payment?      @relation("PaymentReversal")
+  reversalReason    String?
+
+  notes String?
+
+  recordedByUserId String
+  recordedBy       User   @relation("PaymentRecordedBy", fields: [recordedByUserId], references: [id])
+
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @db.Timestamptz(3)
+
+  allocations PaymentAllocation[]
+
+  @@unique([schoolId, receiptNumber])
+  @@index([schoolId, enrolmentId])
+  @@index([schoolId, receivedOn])
+  @@map("payments")
+}
+
+/// Splits one payment across invoices. Keeps the ledger correct when a parent
+/// pays a round sum against three outstanding terms.
+model PaymentAllocation {
+  id        String  @id @default(cuid())
+  schoolId  String
+  paymentId String
+  payment   Payment @relation(fields: [paymentId], references: [id])
+  invoiceId String
+  invoice   Invoice @relation(fields: [invoiceId], references: [id])
+
+  amountMinor BigInt
+
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+
+  @@unique([paymentId, invoiceId])
+  @@index([invoiceId])
+  @@map("payment_allocations")
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// AUDIT — append-only. No update, no delete. Written by the Prisma extension
+// for marks, fees and attendance; available to any other domain that needs it.
+// ═══════════════════════════════════════════════════════════════════════════
+
+model AuditLog {
+  id       String @id @default(cuid())
+  schoolId String
+  school   School @relation(fields: [schoolId], references: [id])
+
+  /// Prisma model name, e.g. "Mark".
+  entityType String
+  entityId   String
+  action     AuditAction
+
+  /// Only the fields that moved, plus their old and new values. Full-row
+  /// snapshots get expensive at attendance volume.
+  changedFields String[] @default([])
+  before        Json?
+  after         Json?
+
+  actorUserId String?
+  actor       User?   @relation(fields: [actorUserId], references: [id])
+  /// Which hat the actor was wearing, since one user can hold several roles.
+  actorRole   Role?
+
+  /// Free-text reason, required by the service layer for mark corrections
+  /// after lock and for payment reversals.
+  reason String?
+
+  requestId String?
+  ipAddress String?
+  userAgent String?
+
+  at DateTime @default(now()) @db.Timestamptz(3)
+
+  @@index([schoolId, entityType, entityId])
+  @@index([schoolId, at])
+  @@index([schoolId, actorUserId, at])
+  @@map("audit_logs")
+}
