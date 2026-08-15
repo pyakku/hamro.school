@@ -309,6 +309,7 @@ resource "aws_instance" "main" {
     region           = var.region
     environment      = var.environment
     hostname         = var.hostname
+    base_domain      = var.base_domain
     acme_email       = var.acme_email
     backup_bucket    = aws_s3_bucket.backups.bucket
     parameter_prefix = local.parameter_prefix

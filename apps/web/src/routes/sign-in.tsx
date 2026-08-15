@@ -1,8 +1,9 @@
 import { useState, type FormEvent } from 'react';
-import { Navigate } from 'react-router-dom';
+import { Link, Navigate } from 'react-router-dom';
 import { loginRequestSchema, type MessageKey } from '@hamro/shared';
 import { ApiRequestError } from '../lib/api.js';
 import { useSession } from '../lib/session.js';
+import { currentSchoolSlug } from '../lib/tenant.js';
 import { useT } from '../lib/i18n.js';
 
 /**
@@ -16,7 +17,9 @@ export default function SignIn() {
   const t = useT();
   const { user, signIn } = useSession();
 
-  const [schoolSlug, setSchoolSlug] = useState('');
+  // On a school's own subdomain the tenant comes from the address bar, and
+  // asking for it again would be asking a parent to know a slug.
+  const [schoolSlug, setSchoolSlug] = useState(currentSchoolSlug ?? '');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
@@ -32,7 +35,9 @@ export default function SignIn() {
 
     // The same schema the API validates against, so the browser and the server
     // cannot disagree about what a valid email is.
-    const parsed = loginRequestSchema.safeParse({ schoolSlug, email, password });
+    const parsed = loginRequestSchema.safeParse(
+      currentSchoolSlug ? { email, password } : { schoolSlug, email, password },
+    );
     if (!parsed.success) {
       const errors: Record<string, string> = {};
       for (const issue of parsed.error.issues) {
@@ -83,6 +88,7 @@ export default function SignIn() {
               </div>
             )}
 
+            {!currentSchoolSlug && (
             <label className="mb-3.5 block" htmlFor="schoolSlug">
               <span className="field-label mb-1.5 block">{t('auth.sign_in.school')}</span>
               <input
@@ -104,6 +110,7 @@ export default function SignIn() {
                   : t('auth.sign_in.school_help')}
               </span>
             </label>
+            )}
 
             <label className="mb-3.5 block" htmlFor="email">
               <span className="field-label mb-1.5 block">{t('auth.sign_in.email')}</span>
@@ -148,6 +155,14 @@ export default function SignIn() {
             <button type="submit" className="btn-primary w-full" disabled={submitting}>
               {submitting ? t('auth.sign_in.submitting') : t('auth.sign_in.submit')}
             </button>
+
+            {!currentSchoolSlug && (
+              <p className="mt-4 text-center text-[13.5px] text-ink-45">
+                <Link to="/signup" className="underline underline-offset-4 hover:text-ink">
+                  {t('signup.title')}
+                </Link>
+              </p>
+            )}
           </form>
         </div>
       </div>

@@ -42,6 +42,28 @@ export const en = {
   'auth.sign_out': 'Sign out',
   'auth.signed_in_as': 'Signed in as',
 
+  // ── Signup ────────────────────────────────────────────────────────────────
+  'signup.title': 'Start your school',
+  'signup.subtitle': 'Free while we are in beta.',
+  'signup.school_name': 'School name',
+  'signup.address': 'Web address',
+  'signup.address_help': 'This is where your staff and parents will sign in.',
+  'signup.address_checking': 'Checking…',
+  'signup.address_available': 'Available.',
+  'signup.timezone': 'Timezone',
+  'signup.currency': 'Currency',
+  'signup.admin_heading': 'Your account',
+  'signup.first_name': 'First name',
+  'signup.last_name': 'Last name',
+  'signup.submit': 'Create school',
+  'signup.submitting': 'Creating…',
+  'signup.done.title': 'Your school is ready',
+  'signup.done.body': 'Sign in at {url}. Bookmark it — that is your school\'s address from now on.',
+  'signup.have_account': 'Already have an account?',
+  'error.signup.slug_taken': 'That address is already taken.',
+  'error.signup.email_taken': 'An account with that email already exists at this school.',
+  'validation.slug_unavailable': 'Use 2–40 letters, numbers or hyphens. Some names are reserved.',
+
   // ── Validation ────────────────────────────────────────────────────────────
   'validation.required': 'This is required.',
   'validation.email': 'Enter a valid email address.',

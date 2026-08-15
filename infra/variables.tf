@@ -48,6 +48,12 @@ variable "hostname" {
   default     = "app.hamro.school"
 }
 
+variable "base_domain" {
+  description = "Schools live at <slug>.<base_domain>. A wildcard A record must point here, and Caddy issues a certificate per school on demand."
+  type        = string
+  default     = "hamro.school"
+}
+
 variable "acme_email" {
   description = "Let's Encrypt sends expiry warnings here. Caddy renews automatically; this is the safety net."
   type        = string

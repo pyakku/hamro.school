@@ -4,6 +4,7 @@ import { LocaleProvider } from './lib/i18n.js';
 import { SessionProvider, useSession } from './lib/session.js';
 import SignIn from './routes/sign-in.js';
 import SignedIn from './routes/signed-in.js';
+import Signup from './routes/signup.js';
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -51,6 +52,7 @@ function LocalisedRoutes() {
       <BrowserRouter>
         <Routes>
           <Route path="/sign-in" element={<SignIn />} />
+          <Route path="/signup" element={<Signup />} />
           <Route path="/" element={<SignedIn />} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>

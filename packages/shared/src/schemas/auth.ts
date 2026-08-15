@@ -12,12 +12,15 @@ export const grantSchema = z.object({
 });
 
 /**
- * The school comes in with the credentials because emails are unique per
- * school, not globally: the same parent may hold an account at two schools.
- * In production the subdomain fills this in and the field is hidden.
+ * Emails are unique per school, not globally, so a login needs to name one.
+ *
+ * On `<school>.hamro.school` the hostname names it and this field is absent —
+ * the sign-in screen does not show it. On the shared `app.hamro.school` the
+ * user types it. The server takes the hostname over the body when both are
+ * present: a request cannot talk its way into another tenant.
  */
 export const loginRequestSchema = z.object({
-  schoolSlug: schoolSlugSchema,
+  schoolSlug: schoolSlugSchema.optional(),
   email: emailSchema,
   password: z.string().min(1, { message: 'validation.required' }),
 });

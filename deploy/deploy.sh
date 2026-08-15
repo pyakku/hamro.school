@@ -66,7 +66,7 @@ fi
 # resolves to its dist, and tsc will not find types that do not exist yet.
 echo "→ Building web app"
 pnpm --filter @hamro/shared build
-VITE_API_URL=/api pnpm --filter @hamro/web build
+VITE_API_URL=/api VITE_BASE_DOMAIN="${BASE_DOMAIN:-hamro.school}" pnpm --filter @hamro/web build
 
 # ── 3. Ship artifacts ───────────────────────────────────────────────────────
 echo "→ Uploading artifacts"

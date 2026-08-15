@@ -1,23 +1,41 @@
 # Caddy: TLS, the web app, and a proxy to the API — all on one hostname.
 #
-# One origin for both halves means a browser request to /api is same-origin.
-# No CORS preflight, no cross-site cookie rules to get wrong, and the refresh
-# cookie is simply a cookie. The Flutter apps hit the same URLs.
+# Two site blocks share one handler set: the shared sign-in at app.<domain>,
+# and every school at <slug>.<domain>. Both serve the same bundle; the browser
+# works out which school it is from its own address.
 #
-# Certificates are obtained and renewed from Let's Encrypt automatically, as
-# soon as the DNS record points here.
+# One origin for both halves means a browser request to /api is same-origin.
+# No CORS preflight, no cross-site cookie rules to get wrong. The Flutter apps
+# hit the same URLs.
 {
 	email {$ACME_EMAIL}
-	# Keep the admin API off; nothing needs it and it is one less listener.
 	admin off
+
+	# On-demand TLS: a certificate is issued the first time someone visits a
+	# school's subdomain, rather than one wildcard for everything.
+	#
+	# A wildcard certificate would need DNS-01, which needs an API token for the
+	# DNS provider — and the domain is on a registrar without a usable API. This
+	# gets the same result over HTTP-01 with no DNS credentials anywhere.
+	#
+	# `ask` is not optional. Without it, anyone resolving `whatever.hamro.school`
+	# to this box makes us request a certificate for it, and Let's Encrypt allows
+	# 50 per registered domain per week — one bored person could stop new schools
+	# onboarding for a week.
+	on_demand_tls {
+		ask http://api:4000/internal/tls-allowed
+	}
 }
 
-{$HAMRO_HOSTNAME} {
+(hamro) {
 	encode zstd gzip
 
-	# ── API ─────────────────────────────────────────────────────────────
-	# Stripped, so the API keeps serving /auth/login while the browser calls
-	# /api/auth/login. The Flutter apps use the same /api prefix.
+	# The internal TLS gate is for Caddy, from inside the compose network. It
+	# must never be reachable through the public /api prefix.
+	handle /api/internal/* {
+		respond 404
+	}
+
 	handle /api/* {
 		uri strip_prefix /api
 		reverse_proxy api:4000 {
@@ -26,23 +44,17 @@
 		}
 	}
 
-	# Health check, unprefixed, for uptime monitoring.
 	handle /health {
 		reverse_proxy api:4000
 	}
 
-	# ── Web app ─────────────────────────────────────────────────────────
 	handle {
 		root * /srv/web
 
-		# Hashed filenames are immutable; index.html must never be, or a
-		# deploy takes a day to reach anyone.
 		@immutable path /assets/*
 		header @immutable Cache-Control "public, max-age=31536000, immutable"
 		header /index.html Cache-Control "no-cache"
 
-		# React Router owns the URL space: a hard refresh on /sign-in has to
-		# return index.html rather than a 404.
 		try_files {path} /index.html
 		file_server
 	}
@@ -60,4 +72,17 @@
 		format console
 		level INFO
 	}
+}
+
+# The shared sign-in and signup. Certificate obtained normally at startup.
+{$HAMRO_HOSTNAME} {
+	import hamro
+}
+
+# Every school. One label only, so a.b.hamro.school does not match.
+*.{$HAMRO_BASE_DOMAIN} {
+	tls {
+		on_demand
+	}
+	import hamro
 }

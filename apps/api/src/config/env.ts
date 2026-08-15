@@ -14,6 +14,12 @@ const envSchema = z.object({
   /** Migrations and the seed only. Owner role, not subject to RLS. */
   MIGRATION_DATABASE_URL: z.string().url().optional(),
 
+  /**
+   * The domain schools live under. `<slug>.hamro.school` identifies the tenant,
+   * so this is what turns a Host header into a school.
+   */
+  APP_BASE_DOMAIN: z.string().default('hamro.school'),
+
   API_PORT: z.coerce.number().int().min(1).max(65535).default(4000),
   API_HOST: z.string().default('0.0.0.0'),
   CORS_ORIGINS: z

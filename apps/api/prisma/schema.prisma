@@ -50,6 +50,15 @@ enum Role {
   DRIVER
 }
 
+/// Commercial plan. Every school that signs up today lands on BETA: free,
+/// full-featured, and explicitly not a promise about future pricing. The other
+/// tiers exist so beta schools can be grandfathered rather than migrated.
+enum SchoolPlan {
+  BETA
+  STARTER
+  PRO
+}
+
 enum AcademicYearStatus {
   PLANNING
   ACTIVE
@@ -202,6 +211,11 @@ model School {
 
   /// BCP 47 default for the school's UI; individual users may override.
   defaultLocale String @default("en") @map("default_locale")
+
+  plan        SchoolPlan @default(BETA)
+  /// When the school signed itself up, as distinct from when the row was
+  /// created by an import or by us.
+  onboardedAt DateTime?  @map("onboarded_at") @db.Timestamptz(3)
 
   /// Days the school normally operates. Mon–Fri is not universal — Gulf
   /// schools run Sun–Thu. Drives the attendance denominator with holidays.

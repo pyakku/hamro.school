@@ -13,6 +13,7 @@ import { env } from './config/env.js';
 import authPlugin from './plugins/auth.js';
 import errorHandlerPlugin from './plugins/error-handler.js';
 import authRoutes from './auth/routes.js';
+import signupRoutes from './signup/routes.js';
 import { rawPrisma } from './db/client.js';
 
 export async function buildApp(): Promise<FastifyInstance> {
@@ -51,7 +52,25 @@ export async function buildApp(): Promise<FastifyInstance> {
   });
 
   await app.register(cors, {
-    origin: env.CORS_ORIGINS,
+    // Every school has its own origin, so the allowed set is a rule rather
+    // than a list: the configured origins, plus any subdomain of the base
+    // domain. A wildcard string would not do — browsers refuse to send
+    // credentials to `*`, and the refresh cookie is the whole session.
+    origin(origin, callback) {
+      if (!origin) return callback(null, true); // same-origin, curl, mobile
+      let hostname: string;
+      try {
+        hostname = new URL(origin).hostname.toLowerCase();
+      } catch {
+        return callback(null, false);
+      }
+      const base = env.APP_BASE_DOMAIN.toLowerCase();
+      const allowed =
+        env.CORS_ORIGINS.includes(origin) ||
+        hostname === base ||
+        hostname.endsWith(`.${base}`);
+      callback(null, allowed);
+    },
     credentials: true, // the refresh cookie
   });
 
@@ -78,6 +97,7 @@ export async function buildApp(): Promise<FastifyInstance> {
   );
 
   await app.register(authRoutes);
+  await app.register(signupRoutes);
 
   return app;
 }

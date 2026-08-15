@@ -75,6 +75,7 @@ services:
       # Caddy proxies the API at /api, so the browser's path is /api/auth/...
       # even though this process only ever sees /auth/...
       REFRESH_COOKIE_PATH: /api/auth
+      APP_BASE_DOMAIN: ${HAMRO_BASE_DOMAIN:-hamro.school}
       # Node sizes its heap from total system memory, not the cgroup limit, and
       # would happily plan for 1 GB it cannot have.
       NODE_OPTIONS: --max-old-space-size=256
@@ -99,6 +100,7 @@ services:
       - "443:443"
     environment:
       HAMRO_HOSTNAME: ${HAMRO_HOSTNAME:?}
+      HAMRO_BASE_DOMAIN: ${HAMRO_BASE_DOMAIN:-hamro.school}
       ACME_EMAIL: ${ACME_EMAIL:?}
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro

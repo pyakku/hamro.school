@@ -16,6 +16,7 @@ export default defineConfig(({ mode }) => {
     },
     define: {
       __API_URL__: JSON.stringify(env.VITE_API_URL ?? 'http://localhost:4000'),
+      __BASE_DOMAIN__: JSON.stringify(env.VITE_BASE_DOMAIN ?? 'hamro.school'),
     },
     build: {
       sourcemap: true,

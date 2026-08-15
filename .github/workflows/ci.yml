@@ -66,6 +66,8 @@ jobs:
           JWT_ACCESS_SECRET=ci-only-access-secret-not-used-anywhere-real-000000
           JWT_REFRESH_SECRET=ci-only-refresh-secret-not-used-anywhere-real-00000
           VITE_API_URL=http://localhost:4000
+          APP_BASE_DOMAIN=hamro.school
+          VITE_BASE_DOMAIN=hamro.school
           EOF
 
       - run: pnpm --filter @hamro/api exec prisma generate

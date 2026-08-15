@@ -52,6 +52,7 @@ cat > /opt/hamro/env.sh <<EOF
 export AWS_REGION=${region}
 export HAMRO_ENVIRONMENT=${environment}
 export HAMRO_HOSTNAME=${hostname}
+export HAMRO_BASE_DOMAIN=${base_domain}
 export ACME_EMAIL=${acme_email}
 export BACKUP_BUCKET=${backup_bucket}
 export PARAMETER_PREFIX=${parameter_prefix}
@@ -80,6 +81,7 @@ aws ssm get-parameters-by-path \
 
 {
   echo "HAMRO_HOSTNAME=$HAMRO_HOSTNAME"
+  echo "HAMRO_BASE_DOMAIN=$HAMRO_BASE_DOMAIN"
   echo "ACME_EMAIL=$ACME_EMAIL"
   echo "NODE_ENV=production"
 } >> "$tmp"
