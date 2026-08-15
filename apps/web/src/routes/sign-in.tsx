@@ -19,8 +19,7 @@ export default function SignIn() {
 
   // On a school's own subdomain the tenant comes from the address bar, and
   // asking for it again would be asking a parent to know a slug.
-  const [schoolSlug, setSchoolSlug] = useState(currentSchoolSlug ?? '');
-  const [email, setEmail] = useState('');
+  const [identifier, setIdentifier] = useState('');
   const [password, setPassword] = useState('');
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
   const [formError, setFormError] = useState<MessageKey | null>(null);
@@ -35,9 +34,7 @@ export default function SignIn() {
 
     // The same schema the API validates against, so the browser and the server
     // cannot disagree about what a valid email is.
-    const parsed = loginRequestSchema.safeParse(
-      currentSchoolSlug ? { email, password } : { schoolSlug, email, password },
-    );
+    const parsed = loginRequestSchema.safeParse({ identifier, password });
     if (!parsed.success) {
       const errors: Record<string, string> = {};
       for (const issue of parsed.error.issues) {
@@ -88,49 +85,36 @@ export default function SignIn() {
               </div>
             )}
 
-            {!currentSchoolSlug && (
-            <label className="mb-3.5 block" htmlFor="schoolSlug">
-              <span className="field-label mb-1.5 block">{t('auth.sign_in.school')}</span>
-              <input
-                id="schoolSlug"
-                className="input font-mono"
-                value={schoolSlug}
-                onChange={(event) => setSchoolSlug(event.target.value)}
-                placeholder={t('auth.sign_in.school_placeholder')}
-                autoComplete="organization"
-                autoCapitalize="none"
-                spellCheck={false}
-                aria-invalid={Boolean(fieldErrors.schoolSlug)}
-                aria-describedby="schoolSlug-help"
-                required
-              />
-              <span id="schoolSlug-help" className="mt-1.5 block font-mono text-[11px] text-ink-45">
-                {fieldErrors.schoolSlug
-                  ? t(fieldErrors.schoolSlug as MessageKey)
-                  : t('auth.sign_in.school_help')}
+            <label className="mb-3.5 block" htmlFor="identifier">
+              <span className="field-label mb-1.5 block">{t('auth.sign_in.identifier')}</span>
+              <div className="flex items-center gap-1">
+                <input
+                  id="identifier"
+                  className="input font-mono"
+                  value={identifier}
+                  onChange={(event) => setIdentifier(event.target.value)}
+                  autoComplete="username"
+                  autoCapitalize="none"
+                  spellCheck={false}
+                  aria-invalid={Boolean(fieldErrors.identifier)}
+                  aria-describedby="identifier-help"
+                  required
+                />
+                {/* On a school's own subdomain the suffix is implied, and
+                    showing it saves everyone typing it. */}
+                {currentSchoolSlug && (
+                  <span className="shrink-0 font-mono text-[13px] text-ink-45">
+                    @{currentSchoolSlug}
+                  </span>
+                )}
+              </div>
+              <span id="identifier-help" className="mt-1.5 block font-mono text-[11px] text-ink-45">
+                {fieldErrors.identifier
+                  ? t(fieldErrors.identifier as MessageKey)
+                  : currentSchoolSlug
+                    ? t('auth.sign_in.identifier_help_school', { school: currentSchoolSlug })
+                    : t('auth.sign_in.identifier_help')}
               </span>
-            </label>
-            )}
-
-            <label className="mb-3.5 block" htmlFor="email">
-              <span className="field-label mb-1.5 block">{t('auth.sign_in.email')}</span>
-              <input
-                id="email"
-                type="email"
-                className="input"
-                value={email}
-                onChange={(event) => setEmail(event.target.value)}
-                autoComplete="username"
-                autoCapitalize="none"
-                spellCheck={false}
-                aria-invalid={Boolean(fieldErrors.email)}
-                required
-              />
-              {fieldErrors.email && (
-                <span className="mt-1.5 block font-mono text-[11px] text-stamp">
-                  {t(fieldErrors.email as MessageKey)}
-                </span>
-              )}
             </label>
 
             <label className="mb-5 block" htmlFor="password">

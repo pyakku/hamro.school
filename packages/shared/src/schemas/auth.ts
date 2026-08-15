@@ -20,8 +20,11 @@ export const grantSchema = z.object({
  * present: a request cannot talk its way into another tenant.
  */
 export const loginRequestSchema = z.object({
-  schoolSlug: schoolSlugSchema.optional(),
-  email: emailSchema,
+  /**
+   * `username@school-slug`, or bare `username` on a school's own subdomain.
+   * Not an email address — see tenancy/identifier.ts.
+   */
+  identifier: z.string().trim().min(1, { message: 'validation.required' }).max(120),
   password: z.string().min(1, { message: 'validation.required' }),
 });
 
@@ -29,7 +32,10 @@ export type LoginRequest = z.infer<typeof loginRequestSchema>;
 
 export const sessionUserSchema = z.object({
   id: idSchema,
-  email: z.string(),
+  identifier: z.string(),
+  username: z.string(),
+  /** A real mailbox, if the school recorded one. Nothing can be sent to the identifier. */
+  contactEmail: z.string().nullable(),
   firstName: z.string(),
   lastName: z.string(),
   locale: z.string(),

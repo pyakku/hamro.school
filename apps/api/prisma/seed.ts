@@ -57,6 +57,9 @@ const time = (hour: number, minute: number): Date => new Date(Date.UTC(1970, 0, 
 
 const DEMO_PASSWORD = 'hamro-demo-2026';
 
+/** Every identifier in this school is `<username>@modelschool`. */
+const SCHOOL_SLUG = 'modelschool';
+
 // ── Name pools. International, because the customers are. ──────────────────
 
 const GIVEN_NAMES = [
@@ -92,7 +95,7 @@ async function hash(plaintext: string): Promise<string> {
 const pad = (value: number, width: number): string => String(value).padStart(width, '0');
 
 async function main(): Promise<void> {
-  const existing = await prisma.school.findUnique({ where: { slug: 'greenhill' } });
+  const existing = await prisma.school.findUnique({ where: { slug: SCHOOL_SLUG } });
   if (existing) {
     throw new Error(
       'The demo school already exists. Run `pnpm db:reset` to rebuild from scratch — ' +
@@ -100,23 +103,25 @@ async function main(): Promise<void> {
     );
   }
 
-  console.log('Seeding Greenhill Academy…');
+  console.log('Seeding Model School…');
 
   // ── School ───────────────────────────────────────────────────────────────
   const school = await prisma.school.create({
     data: {
-      slug: 'greenhill',
-      name: 'Greenhill Academy',
-      legalName: 'Greenhill Academy Pvt. Ltd.',
-      timezone: 'Asia/Kathmandu',
+      slug: SCHOOL_SLUG,
+      name: 'Model School',
+      legalName: 'Model School Pvt. Ltd.',
+      timezone: 'Asia/Kolkata',
       currency: 'INR',
       currencyMinorUnits: 2,
       defaultLocale: 'en',
       workingDays: ['MON', 'TUE', 'WED', 'THU', 'FRI'],
-      city: 'Kathmandu',
-      country: 'NP',
-      email: 'office@greenhill.example',
-      phone: '+977-1-5550100',
+      city: 'Kalimpong',
+      country: 'IN',
+      plan: 'BETA',
+      onboardedAt: new Date(),
+      email: 'office@modelschool.example',
+      phone: '+91-3552-255100',
     },
   });
   const schoolId = school.id;
@@ -207,24 +212,27 @@ async function main(): Promise<void> {
   async function createUser(
     firstName: string,
     lastName: string,
-    email: string,
+    username: string,
     roles: Role[],
   ): Promise<string> {
     const user = await prisma.user.create({
       data: {
         schoolId,
-        email,
+        identifier: `${username}@${SCHOOL_SLUG}`,
+        username,
+        // No contact address on seeded accounts: they are fictional people and
+        // nothing should ever try to email them.
+        contactEmail: null,
         passwordHash,
         firstName,
         lastName,
-        emailVerifiedAt: new Date(),
         roleAssignments: { create: roles.map((role) => ({ schoolId, role })) },
       },
     });
     return user.id;
   }
 
-  const adminUserId = await createUser('Meera', 'Joshi', 'admin@greenhill.example', ['SCHOOL_ADMIN']);
+  const adminUserId = await createUser('Meera', 'Joshi', 'admin', ['SCHOOL_ADMIN']);
   await prisma.staffProfile.create({
     data: {
       schoolId,
@@ -235,7 +243,7 @@ async function main(): Promise<void> {
     },
   });
 
-  const accountsUserId = await createUser('Suresh', 'Baral', 'accounts@greenhill.example', ['ACCOUNTS']);
+  const accountsUserId = await createUser('Suresh', 'Baral', 'accounts', ['ACCOUNTS']);
   await prisma.staffProfile.create({
     data: {
       schoolId,
@@ -246,7 +254,7 @@ async function main(): Promise<void> {
     },
   });
 
-  const driverUserId = await createUser('Bikash', 'Tamang', 'driver@greenhill.example', ['DRIVER']);
+  const driverUserId = await createUser('Bikash', 'Tamang', 'driver', ['DRIVER']);
   await prisma.staffProfile.create({
     data: {
       schoolId,
@@ -260,8 +268,8 @@ async function main(): Promise<void> {
 
   const teachers = [];
   for (const [index, [firstName, lastName]] of STAFF_NAMES.entries()) {
-    const email = `${firstName.toLowerCase()}.${lastName.toLowerCase().replace(/[^a-z]/g, '')}@greenhill.example`;
-    const userId = await createUser(firstName, lastName, email, ['TEACHER']);
+    const username = `${firstName.toLowerCase()}.${lastName.toLowerCase().replace(/[^a-z]/g, '')}`;
+    const userId = await createUser(firstName, lastName, username, ['TEACHER']);
     const staff = await prisma.staffProfile.create({
       data: {
         schoolId,
@@ -455,7 +463,7 @@ async function main(): Promise<void> {
         const guardianUserId = await createUser(
           guardianFirst,
           lastName,
-          `parent${pad(guardianCounter, 3)}@greenhill.example`,
+          `parent${pad(guardianCounter, 3)}`,
           ['PARENT'],
         );
         const guardian = await prisma.guardian.create({
@@ -465,7 +473,7 @@ async function main(): Promise<void> {
             firstName: guardianFirst,
             lastName,
             phone: `+977-98${between(10000000, 99999999)}`,
-            email: `parent${pad(guardianCounter, 3)}@greenhill.example`,
+            email: `parent${pad(guardianCounter, 3)}@modelschool.example`,
             occupation: pick(['Engineer', 'Doctor', 'Shopkeeper', 'Teacher', 'Civil servant']),
           },
         });
@@ -1054,7 +1062,7 @@ async function main(): Promise<void> {
   const unpaid = invoices.length - (await prisma.invoice.count({ where: { status: 'PAID' } }));
 
   console.log(`
-  Greenhill Academy seeded.
+  Model School seeded.
 
     Academic years   2025–26 (closed), 2026–27 (current)
     Grade levels     6, 7, 8 · ${thisYearSections.length} sections
@@ -1065,14 +1073,15 @@ async function main(): Promise<void> {
     Invoices         ${invoices.length} for Term 1 · ${unpaid} not fully paid
     Grading scales   Percentage (A+ to E), GPA 4.0
 
-  Sign in at http://localhost:5173 with school "greenhill":
+  Sign in at https://${SCHOOL_SLUG}.hamro.school
 
-    admin@greenhill.example       school admin
-    accounts@greenhill.example    accounts
-    radhika.karthik@greenhill.example   teacher
-    parent001@greenhill.example   parent
-    driver@greenhill.example      driver
+    admin              school admin
+    accounts           accounts
+    radhika.karthik    teacher
+    parent001          parent
+    driver             driver
 
+    From app.hamro.school add the suffix, e.g. admin@${SCHOOL_SLUG}.
     password: ${DEMO_PASSWORD}
 `);
 }

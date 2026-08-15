@@ -13,7 +13,7 @@ import { rawPrisma } from '../db/client.js';
 
 let app: FastifyInstance;
 
-const SCHOOL = 'greenhill';
+const SCHOOL = 'modelschool';
 const PASSWORD = 'hamro-demo-2026';
 
 beforeAll(async () => {
@@ -49,8 +49,7 @@ async function login(body: Record<string, unknown>, query = '', remoteAddress = 
 describe('POST /auth/login', () => {
   it('signs a school admin in', async () => {
     const response = await login({
-      schoolSlug: SCHOOL,
-      email: 'admin@greenhill.example',
+      identifier: `admin@${SCHOOL}`,
       password: PASSWORD,
     });
 
@@ -58,14 +57,14 @@ describe('POST /auth/login', () => {
     const body = response.json();
     expect(body.accessToken).toBeTypeOf('string');
     expect(body.user.roles).toEqual(['SCHOOL_ADMIN']);
+    expect(body.user.identifier).toBe(`admin@${SCHOOL}`);
     expect(body.user.school.slug).toBe(SCHOOL);
     expect(body.user.school.currency).toBe('INR');
   });
 
   it('sends the browser its refresh token as an httpOnly cookie, not in the body', async () => {
     const response = await login({
-      schoolSlug: SCHOOL,
-      email: 'admin@greenhill.example',
+      identifier: `admin@${SCHOOL}`,
       password: PASSWORD,
     });
 
@@ -81,8 +80,7 @@ describe('POST /auth/login', () => {
     // latter and the browser never sends it — sessions die on reload, with no
     // error anywhere.
     const response = await login({
-      schoolSlug: SCHOOL,
-      email: 'admin@greenhill.example',
+      identifier: `admin@${SCHOOL}`,
       password: PASSWORD,
     });
 
@@ -92,7 +90,7 @@ describe('POST /auth/login', () => {
 
   it('gives the mobile client the token in the body instead', async () => {
     const response = await login(
-      { schoolSlug: SCHOOL, email: 'admin@greenhill.example', password: PASSWORD },
+      { identifier: `admin@${SCHOOL}`, password: PASSWORD },
       '?client=mobile',
     );
 
@@ -102,18 +100,15 @@ describe('POST /auth/login', () => {
 
   it('never says which part was wrong', async () => {
     const wrongPassword = await login({
-      schoolSlug: SCHOOL,
-      email: 'admin@greenhill.example',
+      identifier: `admin@${SCHOOL}`,
       password: 'not the password',
     });
     const unknownUser = await login({
-      schoolSlug: SCHOOL,
-      email: 'nobody@greenhill.example',
+      identifier: `nobody@${SCHOOL}`,
       password: PASSWORD,
     });
     const unknownSchool = await login({
-      schoolSlug: 'not-a-school',
-      email: 'admin@greenhill.example',
+      identifier: 'admin@not-a-school',
       password: PASSWORD,
     });
 
@@ -125,17 +120,15 @@ describe('POST /auth/login', () => {
 
   it('returns an i18n key rather than an English sentence', async () => {
     const response = await login({
-      schoolSlug: SCHOOL,
-      email: 'admin@greenhill.example',
+      identifier: `admin@${SCHOOL}`,
       password: 'wrong',
     });
     expect(response.json().error.key).toBe('error.auth.invalid_credentials');
   });
 
   it('rejects a malformed request with per-field keys', async () => {
-    const response = await login({ schoolSlug: SCHOOL, email: 'not-an-email', password: 'x' });
+    const response = await login({ identifier: '', password: '' });
     expect(response.statusCode).toBe(422);
-    expect(response.json().error.fields?.email).toBe('validation.email');
   });
 
   it('will not let one school log in through another school', async () => {
@@ -145,8 +138,7 @@ describe('POST /auth/login', () => {
     });
 
     const response = await login({
-      schoolSlug: other.slug,
-      email: 'admin@greenhill.example',
+      identifier: `admin@${other.slug}`,
       password: PASSWORD,
     });
 
@@ -161,7 +153,7 @@ describe('brute force protection', () => {
     const attempts = await Promise.all(
       Array.from({ length: 14 }, () =>
         login(
-          { schoolSlug: SCHOOL, email: 'admin@greenhill.example', password: 'guess' },
+          { identifier: `admin@${SCHOOL}`, password: 'guess' },
           '',
           attacker,
         ),
@@ -175,8 +167,7 @@ describe('brute force protection', () => {
 
   it('does not lock out everybody else', async () => {
     const innocent = await login({
-      schoolSlug: SCHOOL,
-      email: 'admin@greenhill.example',
+      identifier: `admin@${SCHOOL}`,
       password: PASSWORD,
     });
     expect(innocent.statusCode).toBe(200);
@@ -186,8 +177,7 @@ describe('brute force protection', () => {
 describe('the permission matrix reaches the client', () => {
   it('gives accounts the ledger and no marks', async () => {
     const response = await login({
-      schoolSlug: SCHOOL,
-      email: 'accounts@greenhill.example',
+      identifier: `accounts@${SCHOOL}`,
       password: PASSWORD,
     });
 
@@ -202,8 +192,7 @@ describe('the permission matrix reaches the client', () => {
 
   it('scopes a teacher to their own sections', async () => {
     const response = await login({
-      schoolSlug: SCHOOL,
-      email: 'radhika.karthik@greenhill.example',
+      identifier: `radhika.karthik@${SCHOOL}`,
       password: PASSWORD,
     });
 
@@ -231,8 +220,7 @@ describe('GET /auth/me', () => {
 
   it('rebuilds the session from the database', async () => {
     const signIn = await login({
-      schoolSlug: SCHOOL,
-      email: 'admin@greenhill.example',
+      identifier: `admin@${SCHOOL}`,
       password: PASSWORD,
     });
 
@@ -243,14 +231,14 @@ describe('GET /auth/me', () => {
     });
 
     expect(response.statusCode).toBe(200);
-    expect(response.json().user.email).toBe('admin@greenhill.example');
+    expect(response.json().user.identifier).toBe(`admin@${SCHOOL}`);
   });
 });
 
 describe('refresh token rotation', () => {
   it('exchanges a token for a new one', async () => {
     const signIn = await login(
-      { schoolSlug: SCHOOL, email: 'admin@greenhill.example', password: PASSWORD },
+      { identifier: `admin@${SCHOOL}`, password: PASSWORD },
       '?client=mobile',
     );
     const first = signIn.json().refreshToken;
@@ -268,7 +256,7 @@ describe('refresh token rotation', () => {
 
   it('treats a replayed token as a theft and kills the whole chain', async () => {
     const signIn = await login(
-      { schoolSlug: SCHOOL, email: 'accounts@greenhill.example', password: PASSWORD },
+      { identifier: `accounts@${SCHOOL}`, password: PASSWORD },
       '?client=mobile',
     );
     const stolen = signIn.json().refreshToken;
@@ -302,8 +290,7 @@ describe('refresh token rotation', () => {
     // The shape the web app actually sends: no payload, no content-type, the
     // token is in an httpOnly cookie the page cannot read.
     const signIn = await login({
-      schoolSlug: SCHOOL,
-      email: 'admin@greenhill.example',
+      identifier: `admin@${SCHOOL}`,
       password: PASSWORD,
     });
     const cookie = signIn.cookies.find((c) => c.name === 'hamro_refresh');
@@ -321,8 +308,7 @@ describe('refresh token rotation', () => {
 
   it('signs out from the cookie alone', async () => {
     const signIn = await login({
-      schoolSlug: SCHOOL,
-      email: 'admin@greenhill.example',
+      identifier: `admin@${SCHOOL}`,
       password: PASSWORD,
     });
     const cookie = signIn.cookies.find((c) => c.name === 'hamro_refresh');

@@ -5,6 +5,8 @@ import { SessionProvider, useSession } from './lib/session.js';
 import SignIn from './routes/sign-in.js';
 import SignedIn from './routes/signed-in.js';
 import Signup from './routes/signup.js';
+import Admin from './routes/admin.js';
+import { isPlatformConsole } from './lib/tenant.js';
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -19,6 +21,19 @@ const queryClient = new QueryClient({
 });
 
 export default function App() {
+  // admin.<domain> is a different application with a different identity system.
+  // It deliberately does not mount SessionProvider: there is no school session
+  // here to widen, and nothing to accidentally inherit.
+  if (isPlatformConsole) {
+    return (
+      <QueryClientProvider client={queryClient}>
+        <LocaleProvider locale="en">
+          <Admin />
+        </LocaleProvider>
+      </QueryClientProvider>
+    );
+  }
+
   return (
     <QueryClientProvider client={queryClient}>
       <SessionProvider>

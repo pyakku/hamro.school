@@ -188,6 +188,16 @@ enum AuditAction {
   REVERSE
 }
 
+/// Platform-wide switches. Outside every tenant, because they are about the
+/// product rather than about any school — the beta signup toggle lives here.
+model PlatformSetting {
+  key       String   @id
+  value     Json
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  @@map("platform_settings")
+}
+
 // ═══════════════════════════════════════════════════════════════════════════
 // TENANT
 // ═══════════════════════════════════════════════════════════════════════════
@@ -360,9 +370,20 @@ model User {
   schoolId String @map("school_id")
   school   School @relation(fields: [schoolId], references: [id])
 
-  /// Unique per school, not globally: the same person at two schools has two
-  /// user rows. See decision doc — cross-school identity is deliberately out.
-  email String
+  /// The login identifier, `username@school-slug`. NOT an email address:
+  /// nothing can be sent to it. See packages/shared/tenancy/identifier.ts.
+  ///
+  /// Because it embeds the slug, a school's slug is permanent — changing it
+  /// would invalidate every identifier in the school.
+  identifier String
+
+  /// The part before the `@`. Stored separately so a school subdomain can
+  /// offer "sign in as sunita" without parsing.
+  username String
+
+  /// A real mailbox, for password resets and notifications. Optional, because
+  /// plenty of guardians have a phone and no email.
+  contactEmail String? @map("contact_email")
 
   /// argon2id. Null for accounts created by an admin that have not yet set a
   /// password (invite flow) — such users cannot log in.
@@ -406,21 +427,24 @@ model User {
   studentLeaveDecisions StudentLeaveRequest[] @relation("StudentLeaveDecidedBy")
   staffLeaveDecisions   StaffLeaveRequest[]   @relation("StaffLeaveDecidedBy")
 
-  @@unique([schoolId, email])
+  @@unique([schoolId, username])
+  @@unique([identifier])
   @@index([schoolId, isActive])
+  @@index([schoolId, contactEmail])
   @@map("users")
 }
 
 /// Platform staff (us), deliberately outside School so no tenant-scoped query
 /// can accidentally grant cross-school access through the normal role path.
 model PlatformAdmin {
-  id           String   @id @default(cuid())
-  email        String   @unique
-  passwordHash String   @map("password_hash")
+  id           String    @id @default(cuid())
+  email        String    @unique
+  passwordHash String    @map("password_hash")
   name         String
-  isActive     Boolean  @default(true) @map("is_active")
-  createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
-  updatedAt    DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+  isActive     Boolean   @default(true) @map("is_active")
+  lastLoginAt  DateTime? @map("last_login_at") @db.Timestamptz(3)
+  createdAt    DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt    DateTime  @updatedAt @map("updated_at") @db.Timestamptz(3)
 
   @@map("platform_admins")
 }

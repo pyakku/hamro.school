@@ -7,6 +7,7 @@ import {
   slugAvailabilityQuerySchema,
   slugAvailabilityResponseSchema,
 } from '@hamro/shared';
+import { assertSignupOpen } from '../platform/service.js';
 import { checkSlug, isCertificateAllowed, signUpSchool } from './service.js';
 
 const signupRoutes: FastifyPluginAsync = async (fastify) => {
@@ -22,7 +23,10 @@ const signupRoutes: FastifyPluginAsync = async (fastify) => {
       config: { rateLimit: { max: 5, timeWindow: '1 hour' } },
       schema: { body: signupRequestSchema, response: { 200: signupResponseSchema } },
     },
-    async (request) => signUpSchool(request.body),
+    async (request) => {
+      await assertSignupOpen();
+      return signUpSchool(request.body);
+    },
   );
 
   app.get(

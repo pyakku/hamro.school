@@ -42,8 +42,24 @@
     height: 100%;
   }
 
+  /**
+   * The ruled-paper background from the marketing site.
+   *
+   * The design system dropped this for the app on the grounds that texture
+   * behind a page of real data is noise — and that still holds for a register.
+   * It is applied here at low contrast, and any dense data surface (a panel, a
+   * table) sits on solid white on top of it, so rows never read through it.
+   */
   body {
-    background: var(--color-paper);
+    background-color: var(--color-paper);
+    background-image: repeating-linear-gradient(
+      to bottom,
+      transparent 0,
+      transparent 27px,
+      rgb(20 36 60 / 0.055) 27px,
+      rgb(20 36 60 / 0.055) 28px
+    );
+    background-attachment: fixed;
     color: var(--color-ink);
     font-family: var(--font-body);
     /* 14.5px, not the marketing site's 17px: this is a tool people use for
@@ -51,6 +67,21 @@
     font-size: 14.5px;
     line-height: 1.55;
     -webkit-font-smoothing: antialiased;
+  }
+
+  /* The red margin line, as on the site. Hidden on narrow screens, where the
+     content already reaches the edge. */
+  @media (min-width: 900px) {
+    body::before {
+      content: '';
+      position: fixed;
+      inset-block: 0;
+      left: 78px;
+      width: 2px;
+      background: rgb(179 58 46 / 0.28);
+      pointer-events: none;
+      z-index: 0;
+    }
   }
 
   h1,

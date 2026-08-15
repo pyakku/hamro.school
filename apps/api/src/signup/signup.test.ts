@@ -40,7 +40,8 @@ const validSignup = (slug: string) => ({
   currency: 'INR',
   adminFirstName: 'Test',
   adminLastName: 'Admin',
-  adminEmail: `admin@${slug}.example`,
+  adminUsername: 'principal',
+  adminContactEmail: `principal@${slug}.example`,
   adminPassword: 'a-long-enough-password',
 });
 
@@ -80,7 +81,7 @@ describe('POST /signup', () => {
     const login = await app.inject({
       method: 'POST',
       url: '/auth/login',
-      payload: { schoolSlug: slug, email: `admin@${slug}.example`, password: 'a-long-enough-password' },
+      payload: { identifier: `principal@${slug}`, password: 'a-long-enough-password' },
       remoteAddress: '10.9.1.3',
     });
 
@@ -135,7 +136,7 @@ describe('GET /signup/slug-available', () => {
   });
 
   it('reports the seeded school as taken', async () => {
-    const response = await app.inject({ method: 'GET', url: '/signup/slug-available?slug=greenhill' });
+    const response = await app.inject({ method: 'GET', url: '/signup/slug-available?slug=modelschool' });
     expect(response.json().available).toBe(false);
     expect(response.json().reason).toBe('error.signup.slug_taken');
   });
@@ -145,7 +146,7 @@ describe('the on-demand TLS gate', () => {
   it('allows a hostname belonging to a real school', async () => {
     const response = await app.inject({
       method: 'GET',
-      url: '/internal/tls-allowed?domain=greenhill.hamro.school',
+      url: '/internal/tls-allowed?domain=modelschool.hamro.school',
     });
     expect(response.statusCode).toBe(200);
   });
@@ -153,7 +154,7 @@ describe('the on-demand TLS gate', () => {
   it('refuses a hostname belonging to nobody', async () => {
     // Without this, anyone pointing a name at the box makes us burn one of the
     // 50 certificates Let's Encrypt allows per week.
-    for (const domain of ['nosuchschool.hamro.school', 'evil.com', 'a.b.hamro.school', 'admin.hamro.school']) {
+    for (const domain of ['nosuchschool.hamro.school', 'evil.com', 'a.b.hamro.school']) {
       const response = await app.inject({ method: 'GET', url: `/internal/tls-allowed?domain=${domain}` });
       expect(response.statusCode, domain).toBe(404);
     }

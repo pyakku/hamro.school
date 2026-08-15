@@ -15,3 +15,7 @@ export const currentSchoolSlug: string | null = schoolSlugFromHost(window.locati
 });
 
 export const baseDomain = __BASE_DOMAIN__;
+
+/** True on admin.<base>: the platform console, not a school. */
+export const isPlatformConsole: boolean =
+  window.location.hostname.toLowerCase() === `admin.${__BASE_DOMAIN__}`;

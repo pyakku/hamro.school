@@ -5,3 +5,4 @@ export * from './i18n/index.js';
 export * from './schemas/common.js';
 export * from './schemas/auth.js';
 export * from './schemas/signup.js';
+export * from './schemas/platform.js';

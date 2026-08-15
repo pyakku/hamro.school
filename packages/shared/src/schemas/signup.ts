@@ -26,7 +26,16 @@ export const signupRequestSchema = z.object({
   currency: z.string().trim().toUpperCase().regex(/^[A-Z]{3}$/).default('USD'),
   adminFirstName: z.string().trim().min(1).max(80),
   adminLastName: z.string().trim().min(1).max(80),
-  adminEmail: emailSchema,
+  /** Becomes `<username>@<slug>`, which is how they sign in. */
+  adminUsername: z
+    .string()
+    .trim()
+    .toLowerCase()
+    .min(2)
+    .max(40)
+    .regex(/^[a-z0-9](?:[a-z0-9._-]{0,38}[a-z0-9])?$/, { message: 'validation.username' }),
+  /** A real mailbox for password resets. Optional, and not the login. */
+  adminContactEmail: emailSchema.optional(),
   adminPassword: passwordSchema,
 });
 

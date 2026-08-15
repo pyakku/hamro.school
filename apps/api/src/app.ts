@@ -14,6 +14,7 @@ import authPlugin from './plugins/auth.js';
 import errorHandlerPlugin from './plugins/error-handler.js';
 import authRoutes from './auth/routes.js';
 import signupRoutes from './signup/routes.js';
+import platformRoutes from './platform/routes.js';
 import { rawPrisma } from './db/client.js';
 
 export async function buildApp(): Promise<FastifyInstance> {
@@ -98,6 +99,7 @@ export async function buildApp(): Promise<FastifyInstance> {
 
   await app.register(authRoutes);
   await app.register(signupRoutes);
+  await app.register(platformRoutes);
 
   return app;
 }

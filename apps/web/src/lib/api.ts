@@ -61,7 +61,14 @@ async function rawRequest<T>(path: string, options: RequestOptions = {}): Promis
 
   // An expired access token is ordinary: refresh once, quietly, and retry. The
   // user should never see a 15-minute token expiring.
-  if (response.status === 401 && retryOnUnauthorised && path !== '/auth/refresh') {
+  if (
+    response.status === 401 &&
+    retryOnUnauthorised &&
+    path !== '/auth/refresh' &&
+    // The platform console holds no refresh cookie: a 401 there is a real
+    // expiry, and retrying would clear the school session for no reason.
+    !path.startsWith('/platform')
+  ) {
     const refreshed = await tryRefresh();
     if (refreshed) {
       return rawRequest<T>(path, { ...options, retryOnUnauthorised: false });
@@ -102,6 +109,7 @@ async function tryRefresh(): Promise<boolean> {
 export const api = {
   get: <T>(path: string) => rawRequest<T>(path),
   post: <T>(path: string, body?: unknown) => rawRequest<T>(path, { method: 'POST', body }),
+  patch: <T>(path: string, body?: unknown) => rawRequest<T>(path, { method: 'PATCH', body }),
 };
 
 export async function login(credentials: LoginRequest): Promise<LoginResponse> {

@@ -103,3 +103,5 @@ export function isSchoolSlugAvailable(value: string): boolean {
 export function schoolUrl(slug: string, baseDomain: string): string {
   return `https://${slug}.${baseDomain}`;
 }
+
+export * from './identifier.js';

@@ -1,5 +1,5 @@
 import type { SignupRequest } from '@hamro/shared';
-import { isSchoolSlugAvailable, schoolUrl } from '@hamro/shared';
+import { buildIdentifier, isSchoolSlugAvailable, schoolUrl } from '@hamro/shared';
 import { env } from '../config/env.js';
 import { rawPrisma } from '../db/client.js';
 import { withTenant } from '../db/tenant.js';
@@ -95,14 +95,18 @@ export async function signUpSchool(input: SignupRequest): Promise<SignupResult> 
       },
     });
 
+    // The first account. Its identifier is <username>@<slug>; the address they
+    // signed up with becomes contact detail, which is where a password reset
+    // would actually go.
     await db.user.create({
       data: {
         schoolId: school.id,
-        email: input.adminEmail,
+        identifier: buildIdentifier(input.adminUsername, school.slug),
+        username: input.adminUsername.toLowerCase(),
+        contactEmail: input.adminContactEmail ?? null,
         passwordHash,
         firstName: input.adminFirstName,
         lastName: input.adminLastName,
-        emailVerifiedAt: null,
         roleAssignments: { create: [{ schoolId: school.id, role: 'SCHOOL_ADMIN' }] },
       },
     });
@@ -140,8 +144,8 @@ export async function isCertificateAllowed(domain: string): Promise<boolean> {
   const hostname = domain.trim().toLowerCase().split(':')[0] ?? '';
   const base = env.APP_BASE_DOMAIN.toLowerCase();
 
-  // The shared sign-in and the base domain are always ours.
-  if (hostname === `app.${base}` || hostname === base) return true;
+  // Ours: the shared sign-in, the platform console, the base domain.
+  if (hostname === `app.${base}` || hostname === `admin.${base}` || hostname === base) return true;
 
   const { schoolSlugFromHost } = await import('@hamro/shared');
   const slug = schoolSlugFromHost(hostname, { baseDomain: base });

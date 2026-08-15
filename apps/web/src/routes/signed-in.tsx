@@ -33,7 +33,7 @@ export default function SignedIn() {
 
         <dl className="px-5 py-4">
           <Row label={t('auth.signed_in_as')} value={`${user.firstName} ${user.lastName}`} />
-          <Row label={t('auth.sign_in.email')} value={user.email} mono />
+          <Row label={t('auth.sign_in.identifier')} value={user.identifier} mono />
           <Row
             label="Roles"
             value={user.roles.map((role) => t(`role.${role}` as MessageKey)).join(' · ')}

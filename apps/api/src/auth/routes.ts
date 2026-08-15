@@ -8,7 +8,7 @@ import {
   refreshResponseSchema,
 } from '@hamro/shared';
 import { z } from 'zod';
-import { schoolSlugFromHost } from '@hamro/shared';
+import { parseLoginIdentifier, schoolSlugFromHost } from '@hamro/shared';
 import { env } from '../config/env.js';
 import { withTenant } from '../db/tenant.js';
 import { invalidCredentials, unauthenticated } from '../lib/errors.js';
@@ -56,15 +56,20 @@ const authRoutes: FastifyPluginAsync = async (fastify) => {
       },
     },
     async (request, reply) => {
-      // The hostname wins over the body. On <school>.hamro.school the tenant is
-      // decided by where the request arrived, and no payload can argue with it.
-      const fromHost = schoolSlugFromHost(request.headers.host, {
+      // The hostname wins. On <school>.hamro.school the tenant is decided by
+      // where the request arrived; on the shared sign-in the suffix of the
+      // identifier decides. A typed suffix can never override the host.
+      const hostSlug = schoolSlugFromHost(request.headers.host, {
         baseDomain: env.APP_BASE_DOMAIN,
       });
-      const schoolSlug = fromHost ?? request.body.schoolSlug;
-      if (!schoolSlug) throw invalidCredentials();
+      const parsed = parseLoginIdentifier(request.body.identifier, hostSlug);
+      if (!parsed) throw invalidCredentials();
 
-      const result = await login({ ...request.body, schoolSlug }, {
+      const result = await login({
+        schoolSlug: parsed.schoolSlug,
+        identifier: parsed.identifier,
+        password: request.body.password,
+      }, {
         requestId: request.id,
         ipAddress: request.ip,
         userAgent: request.headers['user-agent'] ?? null,

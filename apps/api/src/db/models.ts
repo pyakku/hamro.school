@@ -62,7 +62,7 @@ export const TENANT_MODELS = [
  * the tenant boundary so our support access cannot be reached through a
  * school-scoped code path.
  */
-export const UNSCOPED_MODELS = ['School', 'PlatformAdmin'] as const;
+export const UNSCOPED_MODELS = ['School', 'PlatformAdmin', 'PlatformSetting'] as const;
 
 /** Models with `deletedAt`. Reads exclude soft-deleted rows unless asked. */
 export const SOFT_DELETE_MODELS = [

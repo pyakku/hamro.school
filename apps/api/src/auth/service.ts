@@ -43,7 +43,9 @@ function activeRoles(assignments: { role: string; isActive: boolean; revokedAt: 
 function toSessionUser(
   user: {
     id: string;
-    email: string;
+    identifier: string;
+    username: string;
+    contactEmail: string | null;
     firstName: string;
     lastName: string;
     locale: string | null;
@@ -53,7 +55,9 @@ function toSessionUser(
 ): SessionUser {
   return {
     id: user.id,
-    email: user.email,
+    identifier: user.identifier,
+    username: user.username,
+    contactEmail: user.contactEmail,
     firstName: user.firstName,
     lastName: user.lastName,
     locale: user.locale ?? school.defaultLocale,
@@ -72,7 +76,7 @@ function toSessionUser(
  * would be upset to learn we leaked.
  */
 export async function login(
-  input: { schoolSlug: string; email: string; password: string },
+  input: { schoolSlug: string; identifier: string; password: string },
   meta: RequestMeta = {},
 ): Promise<AuthResult> {
   const school = await findSchoolBySlug(input.schoolSlug);
@@ -86,10 +90,12 @@ export async function login(
 
   return withTenant(ctx, async (db) => {
     const user = await db.user.findFirst({
-      where: { email: input.email },
+      where: { identifier: input.identifier },
       select: {
         id: true,
-        email: true,
+        identifier: true,
+        username: true,
+        contactEmail: true,
         firstName: true,
         lastName: true,
         locale: true,
@@ -199,7 +205,9 @@ export async function refreshSession(rawToken: string, meta: RequestMeta = {}): 
       where: { id: existing.userId },
       select: {
         id: true,
-        email: true,
+        identifier: true,
+        username: true,
+        contactEmail: true,
         firstName: true,
         lastName: true,
         locale: true,
@@ -288,7 +296,9 @@ export async function loadSessionUser(db: TenantClient, userId: string, school: 
     where: { id: userId, isActive: true },
     select: {
       id: true,
-      email: true,
+      identifier: true,
+      username: true,
+      contactEmail: true,
       firstName: true,
       lastName: true,
       locale: true,
