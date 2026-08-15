@@ -34,9 +34,18 @@ COPY tsconfig.base.json ./
 COPY packages/shared packages/shared
 COPY apps/api apps/api
 
-RUN pnpm --filter @hamro/shared build && \
-    pnpm --filter @hamro/api exec prisma generate && \
-    pnpm --filter @hamro/api build
+# prisma.config.ts resolves MIGRATION_DATABASE_URL strictly, and `prisma
+# generate` loads the config even though it never opens a connection. A
+# placeholder confined to this stage keeps the runtime check strict — the
+# real URL is injected from SSM when `migrate deploy` actually runs, and this
+# value cannot reach the final image because that is a separate stage.
+ARG PRISMA_BUILD_URL=postgresql://build:build@localhost:5432/build
+
+RUN MIGRATION_DATABASE_URL="$PRISMA_BUILD_URL" \
+    DATABASE_URL="$PRISMA_BUILD_URL" \
+    sh -c 'pnpm --filter @hamro/shared build && \
+           pnpm --filter @hamro/api exec prisma generate && \
+           pnpm --filter @hamro/api build'
 
 # Drop the dev dependencies now that everything is compiled. The Prisma CLI is
 # a runtime dependency on purpose — `migrate deploy` runs from this image.
