@@ -65,3 +65,18 @@ variable "ssh_ingress_cidr" {
   type        = string
   default     = ""
 }
+
+variable "existing_eip_allocation_id" {
+  description = <<-EOT
+    Adopt an Elastic IP you already have, e.g. "eipalloc-0abc123".
+
+    AWS bills every public IPv4 address at ~$3.60/month whether it is attached
+    to anything or not, so an idle Elastic IP is already costing you the same
+    as the new one this stack would otherwise allocate. Reusing it is free;
+    releasing it and allocating another is a wash.
+
+    Leave empty to allocate a new one.
+  EOT
+  type        = string
+  default     = ""
+}

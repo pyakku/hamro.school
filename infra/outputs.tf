@@ -3,7 +3,7 @@ output "dns_record_to_create" {
   value = {
     type  = "A"
     name  = var.hostname
-    value = aws_eip.main.public_ip
+    value = local.public_ip
     ttl   = 300
   }
 }
@@ -18,7 +18,7 @@ output "instance_id" {
 }
 
 output "public_ip" {
-  value = aws_eip.main.public_ip
+  value = local.public_ip
 }
 
 output "backup_bucket" {

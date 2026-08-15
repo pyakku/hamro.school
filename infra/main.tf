@@ -298,9 +298,30 @@ resource "aws_instance" "main" {
 }
 
 # A stable address, so the DNS record survives a stop/start.
+#
+# Every public IPv4 address is billed at ~$3.60/month whether it is attached to
+# anything or not, so an Elastic IP already sitting in the account is worth
+# reusing rather than releasing and allocating a fresh one at the same price.
+# Set existing_eip_allocation_id to adopt one.
+
 resource "aws_eip" "main" {
-  instance = aws_instance.main.id
-  domain   = "vpc"
+  count  = var.existing_eip_allocation_id == "" ? 1 : 0
+  domain = "vpc"
 
   tags = { Name = local.name }
+}
+
+data "aws_eip" "existing" {
+  count = var.existing_eip_allocation_id == "" ? 0 : 1
+  id    = var.existing_eip_allocation_id
+}
+
+resource "aws_eip_association" "main" {
+  instance_id   = aws_instance.main.id
+  allocation_id = local.eip_allocation_id
+}
+
+locals {
+  eip_allocation_id = var.existing_eip_allocation_id == "" ? aws_eip.main[0].id : var.existing_eip_allocation_id
+  public_ip         = var.existing_eip_allocation_id == "" ? aws_eip.main[0].public_ip : data.aws_eip.existing[0].public_ip
 }

@@ -16,3 +16,10 @@ api_desired_count = 1
 # Set true when a customer's security review asks why the tasks have public
 # IPs. Costs ~$70/month in NAT gateways across two AZs.
 tasks_in_private_subnets = false
+
+# Adopt an Elastic IP you already own instead of allocating a new one.
+# Find it with:
+#   aws ec2 describe-addresses \
+#     --query 'Addresses[].{IP:PublicIp,Alloc:AllocationId,Attached:InstanceId}' \
+#     --output table
+# existing_eip_allocation_id = "eipalloc-0abc123def456"
