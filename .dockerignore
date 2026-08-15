@@ -1,0 +1,23 @@
+# Keep the build context small and keep secrets out of the image.
+.git
+.github
+node_modules
+**/node_modules
+**/dist
+**/.turbo
+apps/web/dist
+apps/api/src/generated
+docs
+infra
+*.md
+!README.md
+
+# Never. The image gets its configuration from the task definition.
+.env
+.env.*
+!.env.example
+
+.DS_Store
+*.log
+.vscode
+.idea
