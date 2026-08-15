@@ -118,6 +118,8 @@ WantedBy=timers.target
 UNIT
 
 systemctl daemon-reload
-systemctl enable hamro-backup.timer
+# enable --now: `enable` alone only arms it for the next boot, which on a box
+# that is never rebooted means the first backup never runs.
+systemctl enable --now hamro-backup.timer
 
 echo "Instance ready. Deploy with deploy/deploy.sh."
