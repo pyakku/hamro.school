@@ -80,12 +80,15 @@ Takes about three minutes. It creates a VPC, the instance, an Elastic IP, the
 backups bucket and the secrets in SSM. Passwords and JWT secrets are generated
 here and never printed.
 
-**3. Point DNS at it.** `tofu output dns_record_to_create` gives you an A
-record. Add it at Hostinger:
+**3. Point DNS at it.** Two records at the registrar:
 
-| Type | Name | Value |
-|---|---|---|
-| A | `app` | the Elastic IP |
+| Type | Name | Value | Why |
+|---|---|---|---|
+| A | `app` | the Elastic IP | shared sign-in and signup |
+| A | `*` | the Elastic IP | every school's own subdomain |
+
+More specific records win over the wildcard, so an existing apex or `www`
+marketing site keeps working untouched.
 
 Caddy gets a certificate on its own within a minute of that resolving. Nothing
 to configure and nothing to renew.

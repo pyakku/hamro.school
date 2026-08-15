@@ -116,6 +116,22 @@ the widest scope.
 
 Emails are unique **per school**, not globally.
 
+Each school lives at `<slug>.hamro.school`, and **the subdomain is the tenant**.
+The API resolves it from the `Host` header and takes it over anything in the
+request body, so no payload can talk its way into another school. Both halves
+use `schoolSlugFromHost` from `packages/shared`, so the browser and the server
+cannot disagree about what a hostname means.
+
+Reserved subdomains (`admin`, `api`, `www`, `internal`, …) are in
+`RESERVED_SUBDOMAINS` and cannot be claimed at signup. `admin.hamro.school` is
+ours.
+
+TLS is issued per school on first request — Caddy's on-demand TLS, gated by
+`/internal/tls-allowed`, which says yes only for a real school. Not a wildcard
+certificate: that needs DNS-01 and an API token the registrar does not offer.
+Let's Encrypt allows 50 certificates per registered domain per week, which is
+the ceiling on new schools per week until that changes.
+
 ### 8. Permissions are checked server-side, per resource
 
 The matrix is [packages/shared/src/permissions](packages/shared/src/permissions):
