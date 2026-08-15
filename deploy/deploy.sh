@@ -19,28 +19,42 @@ OWNER="$(echo "$GITHUB_REPOSITORY" | cut -d/ -f1 | tr '[:upper:]' '[:lower:]')"
 IMAGE="ghcr.io/${OWNER}/hamro-api"
 SHA="$(git rev-parse --short HEAD)"
 
-# Everything else comes from the Terraform state, so there is one source of
-# truth for what is deployed where.
-pushd infra >/dev/null
-REGION="$(tofu output -raw region 2>/dev/null || echo "${AWS_REGION:-ap-south-1}")"
-INSTANCE_ID="$(tofu output -raw instance_id)"
-BUCKET="$(tofu output -raw backup_bucket)"
-HOSTNAME="$(tofu output -raw url | sed 's|https://||')"
-popd >/dev/null
+# From the environment when CI sets it, from Terraform state when a human runs
+# this on a laptop. CI has no state file, and a human should not have to know
+# four ids by heart.
+if [ -z "${INSTANCE_ID:-}" ]; then
+  pushd infra >/dev/null
+  REGION="$(tofu output -raw region)"
+  INSTANCE_ID="$(tofu output -raw instance_id)"
+  BUCKET="$(tofu output -raw backup_bucket)"
+  HOSTNAME="$(tofu output -raw url | sed 's|https://||')"
+  popd >/dev/null
+fi
+
+: "${REGION:?set REGION or run from a directory with Terraform state}"
+: "${BUCKET:?set BUCKET}"
+: "${HOSTNAME:?set HOSTNAME}"
 
 echo "→ Deploying ${SHA} to ${HOSTNAME} (${INSTANCE_ID}, ${REGION})"
 
 # ── 1. Build and push the API image ─────────────────────────────────────────
 # The box is arm64; building for the wrong architecture is the classic way to
 # get an "exec format error" in a container that pulled perfectly.
-echo "→ Building API image for linux/arm64"
-docker buildx build \
-  --platform linux/arm64 \
-  -f apps/api/Dockerfile \
-  -t "${IMAGE}:${SHA}" \
-  -t "${IMAGE}:latest" \
-  --push \
-  .
+#
+# CI builds the image in its own step (with a layer cache and a registry token
+# it already has), so it sets SKIP_IMAGE_BUILD and this is a no-op there.
+if [ "${SKIP_IMAGE_BUILD:-0}" != "1" ]; then
+  echo "→ Building API image for linux/arm64"
+  docker buildx build \
+    --platform linux/arm64 \
+    -f apps/api/Dockerfile \
+    -t "${IMAGE}:${SHA}" \
+    -t "${IMAGE}:latest" \
+    --push \
+    .
+else
+  echo "→ Skipping image build; using ${IMAGE}:${SHA}"
+fi
 
 # ── 2. Build the web app ────────────────────────────────────────────────────
 # Same origin as the API, so the browser calls /api/... and there is no CORS
