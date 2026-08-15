@@ -79,8 +79,18 @@
 	import hamro
 }
 
-# Every school. One label only, so a.b.hamro.school does not match.
-*.{$HAMRO_BASE_DOMAIN} {
+# Every school.
+#
+# A catch-all, not `*.hamro.school`. A wildcard site address makes Caddy try to
+# obtain an actual wildcard certificate, which Let's Encrypt only issues over
+# DNS-01 — and with no DNS provider configured that attempt fails and takes the
+# whole server's TLS with it, including the hostname that already had a
+# certificate.
+#
+# A catch-all issues one ordinary certificate per school on first request. What
+# stops it answering for any hostname anyone points at this box is the `ask`
+# gate in the global block, which only says yes for a real school.
+https:// {
 	tls {
 		on_demand
 	}
