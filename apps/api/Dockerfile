@@ -51,8 +51,13 @@ RUN MIGRATION_DATABASE_URL="$PRISMA_BUILD_URL" \
 
 # Drop the dev dependencies now that everything is compiled. The Prisma CLI is
 # a runtime dependency on purpose — `migrate deploy` runs from this image.
+# confirmModulesPurge=false because switching to a production install changes
+# the shape of node_modules, and pnpm will not purge it unprompted without a
+# TTY — which a Docker build never has.
 RUN --mount=type=cache,id=pnpm,target=/pnpm-store \
-    pnpm install --frozen-lockfile --prod --filter @hamro/api... --filter @hamro/shared...
+    pnpm install --frozen-lockfile --prod \
+      --config.confirmModulesPurge=false \
+      --filter @hamro/api... --filter @hamro/shared...
 
 # ── Runtime ─────────────────────────────────────────────────────────────────
 FROM node:22-slim AS runtime
