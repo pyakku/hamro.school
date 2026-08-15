@@ -125,12 +125,18 @@ docker image prune -f
 SCRIPT
 )
 
+# Via a JSON file, not the CLI's `commands=` shorthand: the shorthand parser
+# mangles the \n escapes in a multi-line script, and the instance receives one
+# run-on line ("set: pipefailncd: invalid option name").
+jq -n --arg script "$COMMAND" '{commands: [$script]}' > /tmp/hamro-ssm-params.json
+
 COMMAND_ID=$(aws ssm send-command \
   --region "$REGION" \
   --instance-ids "$INSTANCE_ID" \
   --document-name "AWS-RunShellScript" \
   --comment "hamro deploy ${SHA}" \
-  --parameters "commands=$(printf '%s' "$COMMAND" | jq -Rs .)" \
+  --timeout-seconds 900 \
+  --parameters file:///tmp/hamro-ssm-params.json \
   --query 'Command.CommandId' --output text)
 
 echo "→ SSM command ${COMMAND_ID}; waiting"
