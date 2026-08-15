@@ -62,7 +62,10 @@ fi
 # ── 2. Build the web app ────────────────────────────────────────────────────
 # Same origin as the API, so the browser calls /api/... and there is no CORS
 # and no absolute URL baked into the bundle.
+# shared has to be compiled first: the web app imports @hamro/shared, which
+# resolves to its dist, and tsc will not find types that do not exist yet.
 echo "→ Building web app"
+pnpm --filter @hamro/shared build
 VITE_API_URL=/api pnpm --filter @hamro/web build
 
 # ── 3. Ship artifacts ───────────────────────────────────────────────────────
