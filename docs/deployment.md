@@ -55,7 +55,8 @@ change to the systemd timer.
 Estimates, on-demand, `ap-south-1`. `us-east-1` saves about $0.30/month and
 adds ~250ms round-trip for users in Nepal and India — not worth it.
 
-Not on the bill: ghcr.io for images (free), SSM (free), Let's Encrypt (free).
+Plus ~$0.03 for the container image in ECR. Not on the bill: SSM, Let's
+Encrypt, and GitHub Actions on a public runner.
 
 ## First deploy
 
@@ -89,15 +90,47 @@ record. Add it at Hostinger:
 Caddy gets a certificate on its own within a minute of that resolving. Nothing
 to configure and nothing to renew.
 
-**4. Deploy.**
+**4. Tell GitHub where to deploy.** Four repository variables, from the
+Terraform outputs:
+
+```bash
+gh variable set AWS_REGION      --body "$(cd infra && tofu output -raw region)"
+gh variable set AWS_DEPLOY_ROLE --body "$(cd infra && tofu output -raw github_actions_role_arn)"
+gh variable set ARTIFACT_BUCKET --body "$(cd infra && tofu output -raw backup_bucket)"
+gh variable set ECR_REPOSITORY  --body "$(cd infra && tofu output -raw ecr_repository_url)"
+gh variable set APP_HOSTNAME    --body "$(cd infra && tofu output -raw url | sed 's|https://||')"
+```
+
+**5. Deploy.**
+
+```bash
+gh workflow run deploy.yml -f confirm=deploy      # or the Actions tab
+```
+
+Builds the ARM image and pushes it to ECR, builds the web app, uploads both to
+S3, then drives the instance over SSM: pull, migrate, restart, verify
+`/health`. It fails the job if the health check never passes.
+
+From a laptop instead, with Docker installed:
 
 ```bash
 ./deploy/deploy.sh
 ```
 
-Builds the ARM image and pushes it to ghcr.io, builds the web app, uploads both
-to S3, then drives the instance over SSM: pull, migrate, restart, verify
-`/health`. It exits non-zero if the health check never passes.
+## How the pipeline authenticates
+
+Nothing long-lived, anywhere:
+
+- **GitHub → AWS**: OIDC. Actions presents a token proving it is this repo on
+  `main`; AWS trades it for credentials that expire in an hour. There is no
+  access key in a GitHub secret to leak or rotate.
+- **Instance → ECR**: the instance's IAM role. No registry credential on the
+  box.
+- **Deployer → instance**: SSM Run Command. No SSH key, port 22 closed.
+
+Deploys are `workflow_dispatch` with a typed confirmation rather than automatic
+on push. Until there is enough coverage to trust a green build completely,
+shipping should be a decision someone makes.
 
 ## Day to day
 

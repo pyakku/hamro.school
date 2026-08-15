@@ -55,7 +55,7 @@ services:
           memory: 384M
 
   api:
-    image: ${API_IMAGE:-ghcr.io/pyakku/hamro-api:latest}
+    image: ${API_IMAGE:?set by deploy.sh}
     restart: unless-stopped
     depends_on:
       postgres:

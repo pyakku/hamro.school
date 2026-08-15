@@ -7,16 +7,14 @@
 # driven through SSM Run Command, which authenticates with the same IAM
 # credentials as everything else.
 #
-# The API image is built for ARM (the box is Graviton) and pushed to GitHub
-# Container Registry, which is free — ECR would be a few cents a month, but
-# more importantly CI already has a GitHub token and would need an AWS one.
+# The API image is built for ARM (the box is Graviton) and pushed to ECR. Not
+# ghcr.io: a private ghcr package needs a GitHub token stored on the instance
+# to pull from, and a public one would put our source in a public image. ECR
+# authenticates with the instance's own IAM role and costs a few cents.
 set -euo pipefail
 
 cd "$(dirname "$0")/.."
 
-: "${GITHUB_REPOSITORY:=pyakku/hamro.school}"
-OWNER="$(echo "$GITHUB_REPOSITORY" | cut -d/ -f1 | tr '[:upper:]' '[:lower:]')"
-IMAGE="ghcr.io/${OWNER}/hamro-api"
 SHA="$(git rev-parse --short HEAD)"
 
 # From the environment when CI sets it, from Terraform state when a human runs
@@ -28,12 +26,15 @@ if [ -z "${INSTANCE_ID:-}" ]; then
   INSTANCE_ID="$(tofu output -raw instance_id)"
   BUCKET="$(tofu output -raw backup_bucket)"
   HOSTNAME="$(tofu output -raw url | sed 's|https://||')"
+  REGISTRY="$(tofu output -raw ecr_repository_url)"
   popd >/dev/null
 fi
 
 : "${REGION:?set REGION or run from a directory with Terraform state}"
 : "${BUCKET:?set BUCKET}"
 : "${HOSTNAME:?set HOSTNAME}"
+: "${REGISTRY:?set REGISTRY (the ECR repository URL)}"
+IMAGE="$REGISTRY"
 
 echo "→ Deploying ${SHA} to ${HOSTNAME} (${INSTANCE_ID}, ${REGION})"
 
@@ -45,6 +46,8 @@ echo "→ Deploying ${SHA} to ${HOSTNAME} (${INSTANCE_ID}, ${REGION})"
 # it already has), so it sets SKIP_IMAGE_BUILD and this is a no-op there.
 if [ "${SKIP_IMAGE_BUILD:-0}" != "1" ]; then
   echo "→ Building API image for linux/arm64"
+  aws ecr get-login-password --region "$REGION" \
+    | docker login --username AWS --password-stdin "${REGISTRY%%/*}"
   docker buildx build \
     --platform linux/arm64 \
     -f apps/api/Dockerfile \
@@ -97,6 +100,11 @@ mv /opt/hamro/web.new /opt/hamro/web
 
 /usr/local/bin/hamro-fetch-secrets
 echo "API_IMAGE=${IMAGE}:${SHA}" >> /opt/hamro/.env
+
+# The instance authenticates to ECR with its own IAM role. No registry
+# credential is stored on the box.
+aws ecr get-login-password --region ${REGION} \\
+  | docker login --username AWS --password-stdin ${REGISTRY%%/*}
 
 docker compose -f /opt/hamro/docker-compose.yml pull
 docker compose -f /opt/hamro/docker-compose.yml up -d postgres

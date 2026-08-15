@@ -188,6 +188,24 @@ data "aws_iam_policy_document" "instance" {
     resources = [aws_s3_bucket.backups.arn, "${aws_s3_bucket.backups.arn}/*"]
   }
 
+  # Pull the application image. GetAuthorizationToken is account-wide by
+  # design; the pull itself is scoped to our one repository.
+  statement {
+    sid       = "EcrAuth"
+    actions   = ["ecr:GetAuthorizationToken"]
+    resources = ["*"]
+  }
+
+  statement {
+    sid = "EcrPull"
+    actions = [
+      "ecr:BatchGetImage",
+      "ecr:GetDownloadUrlForLayer",
+      "ecr:BatchCheckLayerAvailability",
+    ]
+    resources = [aws_ecr_repository.api.arn]
+  }
+
   statement {
     sid       = "ReadOwnSecrets"
     actions   = ["ssm:GetParameter", "ssm:GetParameters", "ssm:GetParametersByPath"]
