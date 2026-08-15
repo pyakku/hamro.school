@@ -64,8 +64,9 @@ FROM node:22-slim AS runtime
 
 # tini so signals reach node and the graceful shutdown in main.ts actually runs
 # when the container is stopped.
+# openssl because the Prisma CLI probes for it and warns loudly without it.
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends tini \
+    && apt-get install -y --no-install-recommends tini openssl ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 
 ENV NODE_ENV=production \

@@ -85,7 +85,8 @@ aws s3 cp /tmp/hamro-deploy.tgz "s3://${BUCKET}/artifacts/deploy-${SHA}.tgz" --r
 # ── 4. Roll it out ──────────────────────────────────────────────────────────
 echo "→ Rolling out on the instance"
 COMMAND=$(cat <<SCRIPT
-set -euxo pipefail
+set -euo pipefail
+set -x
 cd /opt/hamro
 
 aws s3 cp s3://${BUCKET}/artifacts/deploy-${SHA}.tgz /tmp/deploy.tgz --region ${REGION}
@@ -114,22 +115,27 @@ aws ecr get-login-password --region ${REGION} \\
 docker compose -f /opt/hamro/docker-compose.yml pull --quiet
 docker compose -f /opt/hamro/docker-compose.yml up -d --wait postgres
 
-# xtrace off around the secrets: with it on, sourcing this file would print
-# every password into the SSM command output and CloudWatch.
+# xtrace stays OFF for the rest of this script. It is not enough to disable it
+# while sourcing the env file: the migration command below interpolates the
+# database URL, and with tracing on the expanded command line — password and
+# all — is echoed into the SSM output and from there into CloudWatch.
 set +x
 set -a
 . /opt/hamro/.env
 set +a
-set -x
 
 # Migrations run as the owner role, which is exempt from RLS, and from the
-# same image that is about to serve traffic. The Prisma CLI lives in the
-# package's own node_modules, not the workspace root — that is how pnpm links
-# binaries.
+# same image that is about to serve traffic.
+#
+# --workdir, because Prisma looks for prisma.config.ts relative to the working
+# directory and the image's default is the workspace root. The CLI itself lives
+# in the package's own node_modules; that is how pnpm links binaries.
+echo "Running migrations"
 docker compose -f /opt/hamro/docker-compose.yml run --rm \\
-  -e MIGRATION_DATABASE_URL="\$MIGRATION_DATABASE_URL" \\
+  --workdir /repo/apps/api \\
+  -e MIGRATION_DATABASE_URL \\
   --entrypoint /usr/bin/tini \\
-  api -- apps/api/node_modules/.bin/prisma migrate deploy --schema apps/api/prisma/schema.prisma
+  api -- node_modules/.bin/prisma migrate deploy
 
 docker compose -f /opt/hamro/docker-compose.yml up -d --wait
 docker image prune -f
