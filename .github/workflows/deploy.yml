@@ -72,11 +72,11 @@ jobs:
         id: target
         run: |
           instance=$(aws ec2 describe-instances \
-            --filters "Name=tag:Name,Values=hamro-production" \
+            --filters "Name=tag:Name,Values=${{ vars.INSTANCE_TAG || 'hamro-production' }}" \
                       "Name=instance-state-name,Values=running" \
             --query 'Reservations[0].Instances[0].InstanceId' --output text)
           if [ "$instance" = "None" ] || [ -z "$instance" ]; then
-            echo "No running instance tagged hamro-production. Has tofu apply run?" >&2
+            echo "No running instance tagged ${{ vars.INSTANCE_TAG || 'hamro-production' }}. Has tofu apply run?" >&2
             exit 1
           fi
           echo "instance_id=$instance" >> "$GITHUB_OUTPUT"

@@ -1,25 +1,33 @@
 # Copy to terraform.tfvars and adjust. terraform.tfvars is gitignored.
 
-environment  = "staging"
-region       = "ap-south-1"
-domain       = "hamro.school"
-api_hostname = "api.hamro.school"
-web_hostname = "app.hamro.school"
+# The instance is found by its Name tag, "hamro-<environment>", which is what
+# the deploy workflow looks for. Changing this means setting the INSTANCE_TAG
+# repository variable in GitHub to match.
+environment = "production"
 
-# Staging runs one task and a single-AZ database. For production:
-#   api_desired_count      = 2
-#   db_multi_az            = true
-#   db_deletion_protection = true
-#   db_backup_retention_days = 30
-api_desired_count = 1
+# us-east-1 is ~$0.30/month cheaper and ~250ms slower for users in Nepal and
+# India. Not a trade worth making for a product whose main screen has to feel
+# instant on a phone.
+region = "ap-south-1"
 
-# Set true when a customer's security review asks why the tasks have public
-# IPs. Costs ~$70/month in NAT gateways across two AZs.
-tasks_in_private_subnets = false
+# Caddy serves the web app and proxies /api from this one name, so there is no
+# second hostname and no cross-origin anything.
+hostname   = "app.hamro.school"
+acme_email = "pyakku@gmail.com"
 
-# Adopt an Elastic IP you already own instead of allocating a new one.
-# Find it with:
+# Adopt an Elastic IP you already own rather than allocating a second one. AWS
+# bills every public IPv4 address whether it is attached or not, so an idle one
+# already costs what a new one would.
 #   aws ec2 describe-addresses \
 #     --query 'Addresses[].{IP:PublicIp,Alloc:AllocationId,Attached:InstanceId}' \
 #     --output table
 # existing_eip_allocation_id = "eipalloc-0abc123def456"
+
+# There can be only one GitHub OIDC provider per AWS account. Set this false if
+# the account already has one from another project, or apply will fail with
+# EntityAlreadyExists.
+# create_github_oidc_provider = false
+
+# 1 GB is tight for Postgres + Node + Caddy. When a register save feels slow at
+# 9am, this is the line to change.
+# instance_type = "t4g.small"
