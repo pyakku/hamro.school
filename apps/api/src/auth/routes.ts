@@ -29,7 +29,9 @@ const cookieOptions = {
   httpOnly: true,
   secure: env.NODE_ENV === 'production',
   sameSite: 'lax' as const,
-  path: '/auth',
+  // As the browser sees it, which is not necessarily the path this process
+  // serves — see REFRESH_COOKIE_PATH.
+  path: env.REFRESH_COOKIE_PATH,
   maxAge: REFRESH_TTL_SECONDS,
 };
 
@@ -115,7 +117,7 @@ const authRoutes: FastifyPluginAsync = async (fastify) => {
     async (request, reply) => {
       const token = request.cookies[REFRESH_COOKIE] ?? request.body?.refreshToken;
       if (token) await revokeRefreshToken(token);
-      reply.clearCookie(REFRESH_COOKIE, { path: '/auth' });
+      reply.clearCookie(REFRESH_COOKIE, { path: env.REFRESH_COOKIE_PATH });
       return reply.status(204).send(null);
     },
   );

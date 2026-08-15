@@ -28,6 +28,16 @@ const envSchema = z.object({
 
   JWT_ACCESS_SECRET: z.string().min(32, 'JWT_ACCESS_SECRET must be at least 32 characters'),
   JWT_REFRESH_SECRET: z.string().min(32, 'JWT_REFRESH_SECRET must be at least 32 characters'),
+  /**
+   * Path the refresh cookie is scoped to, as the *browser* sees it.
+   *
+   * In production a reverse proxy serves the API under /api, so the browser
+   * requests /api/auth/refresh while the API itself only ever sees
+   * /auth/refresh. Scope the cookie to the API's own path and the browser
+   * never sends it — every session dies on reload, silently.
+   */
+  REFRESH_COOKIE_PATH: z.string().startsWith('/').default('/auth'),
+
   JWT_ACCESS_TTL: z.string().default('15m'),
   JWT_REFRESH_TTL: z.string().default('30d'),
 

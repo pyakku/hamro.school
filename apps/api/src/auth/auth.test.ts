@@ -75,6 +75,21 @@ describe('POST /auth/login', () => {
     expect(cookie?.value).toBeTruthy();
   });
 
+  it('scopes the refresh cookie to the path the browser will use', async () => {
+    // Behind the production proxy the browser calls /api/auth/refresh while
+    // this process only ever sees /auth/refresh. Scope the cookie to the
+    // latter and the browser never sends it — sessions die on reload, with no
+    // error anywhere.
+    const response = await login({
+      schoolSlug: SCHOOL,
+      email: 'admin@greenhill.example',
+      password: PASSWORD,
+    });
+
+    const cookie = response.cookies.find((c) => c.name === 'hamro_refresh');
+    expect(cookie?.path).toBe(process.env.REFRESH_COOKIE_PATH ?? '/auth');
+  });
+
   it('gives the mobile client the token in the body instead', async () => {
     const response = await login(
       { schoolSlug: SCHOOL, email: 'admin@greenhill.example', password: PASSWORD },
