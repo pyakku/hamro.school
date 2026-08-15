@@ -109,16 +109,27 @@ echo "API_IMAGE=${IMAGE}:${SHA}" >> /opt/hamro/.env
 aws ecr get-login-password --region ${REGION} \\
   | docker login --username AWS --password-stdin ${REGISTRY%%/*}
 
-docker compose -f /opt/hamro/docker-compose.yml pull
-docker compose -f /opt/hamro/docker-compose.yml up -d postgres
+# --quiet, or layer-by-layer progress fills the 24KB SSM output buffer and
+# truncates away whatever actually went wrong.
+docker compose -f /opt/hamro/docker-compose.yml pull --quiet
 docker compose -f /opt/hamro/docker-compose.yml up -d --wait postgres
 
+# xtrace off around the secrets: with it on, sourcing this file would print
+# every password into the SSM command output and CloudWatch.
+set +x
+set -a
+. /opt/hamro/.env
+set +a
+set -x
+
 # Migrations run as the owner role, which is exempt from RLS, and from the
-# same image that is about to serve traffic.
+# same image that is about to serve traffic. The Prisma CLI lives in the
+# package's own node_modules, not the workspace root — that is how pnpm links
+# binaries.
 docker compose -f /opt/hamro/docker-compose.yml run --rm \\
-  -e MIGRATION_DATABASE_URL \\
+  -e MIGRATION_DATABASE_URL="\$MIGRATION_DATABASE_URL" \\
   --entrypoint /usr/bin/tini \\
-  api -- node_modules/.bin/prisma migrate deploy --schema apps/api/prisma/schema.prisma
+  api -- apps/api/node_modules/.bin/prisma migrate deploy --schema apps/api/prisma/schema.prisma
 
 docker compose -f /opt/hamro/docker-compose.yml up -d --wait
 docker image prune -f
