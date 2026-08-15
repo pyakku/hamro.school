@@ -1,0 +1,115 @@
+# What runs on the box.
+#
+# Three containers on one t4g.micro. Memory limits are set on all of them
+# because 1 GB has no slack: without limits, Postgres will happily take what
+# Node needs and the OOM killer decides which one dies.
+#
+#   postgres  ~320 MB
+#   api       ~320 MB
+#   caddy      ~64 MB
+#   ─────────────────
+#   ~704 MB, leaving room for the OS and page cache, with 2 GB of swap behind it.
+
+name: hamro
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: hamro
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set in /opt/hamro/.env}
+      POSTGRES_DB: hamro_school
+      APP_DB_PASSWORD: ${APP_DB_PASSWORD:?set in /opt/hamro/.env}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      # Creates the RLS-restricted hamro_app role on first boot. The same file
+      # development uses, so the two-role setup cannot drift between them.
+      - ./postgres-init:/docker-entrypoint-initdb.d:ro
+    # Deliberately no `ports:`. Postgres is reachable on the compose network
+    # and nowhere else — not even from the host, let alone the internet.
+    command:
+      - postgres
+      # Tuned for 1 GB total, not for this container's limit.
+      - -c
+      - shared_buffers=192MB
+      - -c
+      - effective_cache_size=512MB
+      - -c
+      - work_mem=4MB
+      - -c
+      - maintenance_work_mem=64MB
+      - -c
+      - max_connections=40
+      - -c
+      - log_min_duration_statement=1000
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U hamro -d hamro_school"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+    deploy:
+      resources:
+        limits:
+          memory: 384M
+
+  api:
+    image: ${API_IMAGE:-ghcr.io/pyakku/hamro-api:latest}
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      NODE_ENV: production
+      LOG_LEVEL: info
+      API_HOST: 0.0.0.0
+      API_PORT: 4000
+      DATABASE_URL: ${DATABASE_URL:?}
+      JWT_ACCESS_SECRET: ${JWT_ACCESS_SECRET:?}
+      JWT_REFRESH_SECRET: ${JWT_REFRESH_SECRET:?}
+      # Caddy serves the web app from the same origin, so a browser request to
+      # /api is same-origin and CORS never enters into it. This stays set for
+      # the Flutter apps, which have no origin at all.
+      CORS_ORIGINS: https://${HAMRO_HOSTNAME}
+      # Node sizes its heap from total system memory, not the cgroup limit, and
+      # would happily plan for 1 GB it cannot have.
+      NODE_OPTIONS: --max-old-space-size=256
+    healthcheck:
+      test: ["CMD-SHELL", "node -e \"fetch('http://127.0.0.1:4000/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))\""]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+    deploy:
+      resources:
+        limits:
+          memory: 384M
+
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    depends_on:
+      - api
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      HAMRO_HOSTNAME: ${HAMRO_HOSTNAME:?}
+      ACME_EMAIL: ${ACME_EMAIL:?}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      # The built SPA. Uploaded by deploy.sh.
+      - /opt/hamro/web:/srv/web:ro
+      # Certificates survive a restart; Let's Encrypt rate limits are real.
+      - caddy_data:/data
+      - caddy_config:/config
+    deploy:
+      resources:
+        limits:
+          memory: 96M
+
+volumes:
+  pgdata:
+  caddy_data:
+  caddy_config:

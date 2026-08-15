@@ -1,13 +1,19 @@
 variable "region" {
-  description = "Where the stack runs. Mumbai is the closest region to the first customers; a school in Kathmandu feels the difference from us-east-1 on every register save."
+  description = <<-EOT
+    Where the box lives.
+
+    us-east-1 is the cheapest region and saves roughly $0.30/month over Mumbai.
+    It also adds ~250ms round-trip for users in Nepal and India, on every
+    request, including the attendance save that has to feel instant on a phone.
+    ap-south-1 is the right call until there are customers somewhere else.
+  EOT
   type        = string
   default     = "ap-south-1"
 }
 
 variable "environment" {
-  description = "staging or production. Everything is named after it, so the two never collide."
-  type        = string
-  default     = "staging"
+  type    = string
+  default = "production"
 
   validation {
     condition     = contains(["staging", "production"], var.environment)
@@ -15,103 +21,47 @@ variable "environment" {
   }
 }
 
-variable "domain" {
-  description = "Registrable domain. The web and API hostnames are subdomains of it, which is what keeps them same-site and the refresh cookie working."
+variable "instance_type" {
+  description = <<-EOT
+    t4g.micro: 2 burstable vCPU, 1 GB RAM, ARM. ~$6/month.
+
+    One gigabyte is genuinely tight for Postgres plus Node plus Caddy. It is
+    made to fit with a 2 GB swap file, a small shared_buffers and a capped Node
+    heap — see deploy/docker-compose.yml. It will run a demo and a first school
+    comfortably. When a second school lands, or a register save starts feeling
+    slow at 9am, move to t4g.small: double the RAM for about $6 more, and it is
+    a stop/change/start rather than a migration.
+  EOT
   type        = string
-  default     = "hamro.school"
+  default     = "t4g.micro"
 }
 
-variable "api_hostname" {
-  description = "Hostname for the API."
-  type        = string
-  default     = "api.hamro.school"
+variable "root_volume_gb" {
+  description = "Holds the OS, Docker images and the Postgres data directory."
+  type        = number
+  default     = 30
 }
 
-variable "web_hostname" {
-  description = "Hostname for the web app."
+variable "hostname" {
+  description = "What the whole product answers on. Caddy serves the web app and proxies /api to the API from this one name, so there is no cross-origin anything."
   type        = string
   default     = "app.hamro.school"
 }
 
-# ── Sizing ──────────────────────────────────────────────────────────────────
-# Deliberately small. A school has hundreds of users, not hundreds of
-# thousands, and the whole stack below runs at roughly $45/month.
-
-variable "api_cpu" {
-  description = "Fargate CPU units. 256 = 0.25 vCPU."
-  type        = number
-  default     = 256
-}
-
-variable "api_memory" {
-  description = "Fargate memory in MiB."
-  type        = number
-  default     = 512
-}
-
-variable "api_desired_count" {
-  description = "Number of API tasks. Two gives you a zero-downtime deploy and survives an AZ going away; one is fine for staging."
-  type        = number
-  default     = 1
-}
-
-variable "db_instance_class" {
-  description = "RDS instance class."
+variable "acme_email" {
+  description = "Let's Encrypt sends expiry warnings here. Caddy renews automatically; this is the safety net."
   type        = string
-  default     = "db.t4g.micro"
+  default     = "pyakku@gmail.com"
 }
 
-variable "db_allocated_storage" {
-  description = "GB. gp3, grows automatically up to max_allocated_storage."
-  type        = number
-  default     = 20
-}
-
-variable "db_backup_retention_days" {
-  description = "Days of automated backups. Schools keep records they are legally required to produce; do not set this to 0."
-  type        = number
-  default     = 7
-}
-
-variable "db_deletion_protection" {
-  description = "Blocks an accidental destroy of the database. Always true for production."
-  type        = bool
-  default     = false
-}
-
-variable "db_multi_az" {
-  description = "Standby in a second AZ. Roughly doubles the database cost; worth it once a school depends on this."
-  type        = bool
-  default     = false
-}
-
-# ── Cost / security trade-off ───────────────────────────────────────────────
-
-variable "tasks_in_private_subnets" {
-  description = <<-EOT
-    Put the API tasks in private subnets behind NAT gateways.
-
-    False (the default) runs them in public subnets with a public IP. Their
-    security group still accepts traffic only from the load balancer, so
-    nothing can reach them directly — but the instance does have a routable
-    address, which some security reviews will object to.
-
-    True is the stricter arrangement and costs about $35/month per AZ for the
-    NAT gateways. Switch it on when a customer's security questionnaire asks,
-    or when there is revenue to pay for it.
-  EOT
-  type        = bool
-  default     = false
-}
-
-variable "image_tag" {
-  description = "Container image tag to run. CI sets this to the commit SHA so a deploy is traceable to a commit."
-  type        = string
-  default     = "latest"
-}
-
-variable "log_retention_days" {
-  description = "CloudWatch log retention."
+variable "backup_retention_days" {
+  description = "How long nightly database dumps live in S3. Self-hosted Postgres has no automated backups — this is the only thing standing between a dead instance and a school's records."
   type        = number
   default     = 30
+}
+
+variable "ssh_ingress_cidr" {
+  description = "Leave empty. Access is via SSM Session Manager, which needs no open port and no key to lose. Set a CIDR only to debug something SSM cannot reach."
+  type        = string
+  default     = ""
 }
