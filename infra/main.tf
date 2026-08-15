@@ -89,11 +89,13 @@ resource "aws_vpc_security_group_ingress_rule" "https" {
 
 resource "aws_vpc_security_group_ingress_rule" "http" {
   security_group_id = aws_security_group.instance.id
-  description       = "HTTP: the Let's Encrypt challenge, then a redirect to HTTPS"
-  cidr_ipv4         = "0.0.0.0/0"
-  from_port         = 80
-  to_port           = 80
-  ip_protocol       = "tcp"
+  # No apostrophes: AWS restricts rule descriptions to a-zA-Z0-9 and
+  # . _-:/()#,@[]+=&;{}!$* — an apostrophe fails with InvalidParameterValue.
+  description = "HTTP for the ACME challenge, then redirected to HTTPS"
+  cidr_ipv4   = "0.0.0.0/0"
+  from_port   = 80
+  to_port     = 80
+  ip_protocol = "tcp"
 }
 
 resource "aws_vpc_security_group_ingress_rule" "ssh" {
@@ -207,9 +209,15 @@ data "aws_iam_policy_document" "instance" {
   }
 
   statement {
-    sid       = "ReadOwnSecrets"
-    actions   = ["ssm:GetParameter", "ssm:GetParameters", "ssm:GetParametersByPath"]
-    resources = ["arn:aws:ssm:${var.region}:${data.aws_caller_identity.current.account_id}:parameter/hamro/${var.environment}/*"]
+    sid     = "ReadOwnSecrets"
+    actions = ["ssm:GetParameter", "ssm:GetParameters", "ssm:GetParametersByPath"]
+    # Both ARNs, deliberately. GetParametersByPath is authorised against the
+    # path itself, while GetParameter is authorised against each parameter
+    # under it — granting only the wildcard fails the by-path call.
+    resources = [
+      "arn:aws:ssm:${var.region}:${data.aws_caller_identity.current.account_id}:parameter/hamro/${var.environment}",
+      "arn:aws:ssm:${var.region}:${data.aws_caller_identity.current.account_id}:parameter/hamro/${var.environment}/*",
+    ]
   }
 }
 
