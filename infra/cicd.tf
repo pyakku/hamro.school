@@ -11,6 +11,26 @@ variable "github_repository" {
   default     = "pyakku/hamro.school"
 }
 
+variable "github_owner_id" {
+  description = "Numeric GitHub owner id, from the OIDC subject claim."
+  type        = string
+  default     = "16604460"
+}
+
+variable "github_repository_id" {
+  description = "Numeric GitHub repository id, from the OIDC subject claim."
+  type        = string
+  default     = "1333347021"
+}
+
+locals {
+  # pyakku@16604460/hamro.school@1333347021
+  github_subject = join("/", [
+    "${split("/", var.github_repository)[0]}@${var.github_owner_id}",
+    "${split("/", var.github_repository)[1]}@${var.github_repository_id}",
+  ])
+}
+
 data "aws_iam_openid_connect_provider" "github" {
   count = var.create_github_oidc_provider ? 0 : 1
   url   = "https://token.actions.githubusercontent.com"
@@ -49,20 +69,22 @@ data "aws_iam_policy_document" "github_assume" {
       values   = ["sts.amazonaws.com"]
     }
 
-    # Only this repository, and only the production environment or the main
-    # branch. A pull request from a fork cannot assume this role, which is the
-    # whole point.
+    # Only this repository, and only the production environment or main.
     #
-    # Both forms are listed because a job that names an `environment:` gets a
-    # different subject claim from one that does not: GitHub sends
-    # `repo:owner/name:environment:production` rather than
-    # `repo:owner/name:ref:refs/heads/main`.
+    # GitHub sends an immutable subject that embeds the numeric owner and
+    # repository ids — `repo:owner@16604460/name@1333347021:...` — rather than
+    # the `repo:owner/name:...` in most documentation. Matching the ids is
+    # stricter than matching the names: it survives a rename, and it cannot be
+    # impersonated by someone who registers the name after a transfer.
+    #
+    # Both the environment and ref forms are listed because a job that names an
+    # `environment:` gets the former and one that does not gets the latter.
     condition {
       test     = "StringEquals"
       variable = "token.actions.githubusercontent.com:sub"
       values = [
-        "repo:${var.github_repository}:environment:production",
-        "repo:${var.github_repository}:ref:refs/heads/main",
+        "repo:${local.github_subject}:environment:production",
+        "repo:${local.github_subject}:ref:refs/heads/main",
       ]
     }
   }
