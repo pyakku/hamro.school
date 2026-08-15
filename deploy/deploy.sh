@@ -114,7 +114,7 @@ docker compose -f /opt/hamro/docker-compose.yml up -d --wait postgres
 # same image that is about to serve traffic.
 docker compose -f /opt/hamro/docker-compose.yml run --rm \\
   -e MIGRATION_DATABASE_URL \\
-  --entrypoint /sbin/tini \\
+  --entrypoint /usr/bin/tini \\
   api -- node_modules/.bin/prisma migrate deploy --schema apps/api/prisma/schema.prisma
 
 docker compose -f /opt/hamro/docker-compose.yml up -d --wait

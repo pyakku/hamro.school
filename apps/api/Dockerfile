@@ -11,10 +11,12 @@
 #   docker build -f apps/api/Dockerfile -t hamro-api .
 
 # ── Build ───────────────────────────────────────────────────────────────────
-FROM node:22-alpine AS build
-
-# argon2 compiles a native binding; alpine needs a toolchain for it.
-RUN apk add --no-cache python3 make g++ libc6-compat
+#
+# Debian, not Alpine, and the reason is build time. argon2 ships prebuilt
+# bindings for glibc but not for musl, so on Alpine it compiles C++ from
+# source — which, cross-building arm64 on an x86 runner under QEMU, took over
+# thirty minutes. On glibc it just downloads the prebuilt binary.
+FROM node:22-slim AS build
 
 RUN corepack enable
 WORKDIR /repo
@@ -53,18 +55,20 @@ RUN --mount=type=cache,id=pnpm,target=/pnpm-store \
     pnpm install --frozen-lockfile --prod --filter @hamro/api... --filter @hamro/shared...
 
 # ── Runtime ─────────────────────────────────────────────────────────────────
-FROM node:22-alpine AS runtime
+FROM node:22-slim AS runtime
 
-# libc6-compat for the prebuilt argon2 binding; tini so signals reach node and
-# the graceful shutdown in main.ts actually runs on an ECS task stop.
-RUN apk add --no-cache libc6-compat tini
+# tini so signals reach node and the graceful shutdown in main.ts actually runs
+# when the container is stopped.
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends tini \
+    && rm -rf /var/lib/apt/lists/*
 
 ENV NODE_ENV=production \
     API_HOST=0.0.0.0 \
     API_PORT=4000
 
 # Never root. The API writes nothing to disk.
-RUN addgroup -S hamro && adduser -S hamro -G hamro
+RUN groupadd --system hamro && useradd --system --gid hamro --no-create-home hamro
 WORKDIR /repo
 
 # pnpm's node_modules are a tree of relative symlinks, so the workspace has to
@@ -79,5 +83,5 @@ EXPOSE 4000
 HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
   CMD node -e "fetch('http://127.0.0.1:'+(process.env.API_PORT||4000)+'/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
 
-ENTRYPOINT ["/sbin/tini", "--"]
+ENTRYPOINT ["/usr/bin/tini", "--"]
 CMD ["node", "apps/api/dist/main.js"]
