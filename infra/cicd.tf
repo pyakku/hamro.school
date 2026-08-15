@@ -49,12 +49,21 @@ data "aws_iam_policy_document" "github_assume" {
       values   = ["sts.amazonaws.com"]
     }
 
-    # Only this repository, and only from main. A pull request from a fork
-    # cannot assume this role, which is the whole point.
+    # Only this repository, and only the production environment or the main
+    # branch. A pull request from a fork cannot assume this role, which is the
+    # whole point.
+    #
+    # Both forms are listed because a job that names an `environment:` gets a
+    # different subject claim from one that does not: GitHub sends
+    # `repo:owner/name:environment:production` rather than
+    # `repo:owner/name:ref:refs/heads/main`.
     condition {
       test     = "StringEquals"
       variable = "token.actions.githubusercontent.com:sub"
-      values   = ["repo:${var.github_repository}:ref:refs/heads/main"]
+      values = [
+        "repo:${var.github_repository}:environment:production",
+        "repo:${var.github_repository}:ref:refs/heads/main",
+      ]
     }
   }
 }
