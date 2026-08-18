@@ -206,9 +206,25 @@ pnpm db:seed
 pnpm dev            # API on :4000, web on :5173
 ```
 
-Sign in at http://localhost:5173 with school `greenhill` and password
-`hamro-demo-2026`. Seeded accounts: `admin@`, `accounts@`,
-`radhika.karthik@` (teacher), `parent001@`, `driver@` — all `@greenhill.example`.
+Sign in at http://localhost:5173. The demo school is **`modelschool`** and the
+password for every seeded account is **`hamro-demo-2026`**.
+
+| Identifier | Role | What it is there to show |
+|---|---|---|
+| `admin@modelschool` | School admin | The whole school: totals, registers owed, the ledger |
+| `accounts@modelschool` | Accounts | The ledger, and *no* attendance, homework or marks |
+| `radhika.karthik@modelschool` | Teacher | Own classes only, registers due, today's periods |
+| `parent001@modelschool` | Parent | One child: attendance, homework, dues |
+| `student@modelschool` | Student | Own record, own grade's papers |
+| `driver@modelschool` | Driver | Notices, and deliberately nothing else |
+
+On a school's own subdomain the suffix is implied — type just `admin`. On the
+shared host you need the whole identifier. These are usernames, not email
+addresses: nothing can be sent to them.
+
+The seed anchors on the day it runs, so registers stop at today and homework is
+due this week. Demo data ages; `pnpm db:reset-demo && pnpm db:seed` rebuilds the
+demo school without touching any other tenant in the database.
 
 Not using Docker? Run [docker/postgres/init/01-app-role.sql](docker/postgres/init/01-app-role.sql)
 against your database as the owner first. Migrations will refuse to run without
