@@ -66,3 +66,18 @@ export const lockedDay = (): AppError =>
 
 export const amendReasonRequired = (): AppError =>
   new AppError(422, 'AMEND_REASON_REQUIRED', 'error.attendance.amend_reason');
+
+/** Setup refusals. */
+export const nameTaken = (): AppError =>
+  new AppError(409, 'NAME_TAKEN', 'error.setup.name_taken');
+
+/**
+ * Something depends on this row.
+ *
+ * Removing a grade level with children enrolled in it, or a subject with marks
+ * against it, would leave records pointing at nothing. Soft delete hides the
+ * row but the references remain, so the honest answer is to refuse and say what
+ * is in the way.
+ */
+export const stillInUse = (): AppError =>
+  new AppError(409, 'STILL_IN_USE', 'error.setup.in_use');

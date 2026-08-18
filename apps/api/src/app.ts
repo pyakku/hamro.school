@@ -16,6 +16,7 @@ import authRoutes from './auth/routes.js';
 import signupRoutes from './signup/routes.js';
 import platformRoutes from './platform/routes.js';
 import schoolRoutes from './school/routes.js';
+import setupRoutes from './setup/routes.js';
 import overviewRoutes from './overview/routes.js';
 import attendanceRoutes from './attendance/routes.js';
 import staffAttendanceRoutes from './staff-attendance/routes.js';
@@ -124,6 +125,7 @@ export async function buildApp(): Promise<FastifyInstance> {
   await app.register(signupRoutes);
   await app.register(platformRoutes);
   await app.register(schoolRoutes);
+  await app.register(setupRoutes);
   await app.register(overviewRoutes);
   await app.register(attendanceRoutes);
   await app.register(staffAttendanceRoutes);

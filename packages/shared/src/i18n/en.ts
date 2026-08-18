@@ -22,6 +22,10 @@ export const en = {
   'error.forbidden': "You don't have access to that.",
   'error.unauthenticated': 'Sign in to continue.',
   'error.rate_limited': 'Too many attempts. Wait a minute and try again.',
+  'error.setup.end_before_start': 'The end date cannot be before the start date.',
+  'error.setup.name_taken': 'Something with that name already exists.',
+  'error.setup.in_use':
+    'That is in use and cannot be removed. Rename it, or remove what uses it first.',
   'error.attendance.closed_day':
     'The school was closed that day, so there is no register to take. Nobody is marked absent.',
   'error.attendance.incomplete': 'Mark every student before saving.',
