@@ -13,6 +13,7 @@ import type {
   PaymentRow,
   Register,
   SchoolContext,
+  SetupOverview,
   SectionAttendance,
   StaffRow,
   StudentRow,
@@ -263,3 +264,71 @@ export function useSaveStaffAttendance() {
     onSuccess: () => void queryClient.invalidateQueries({ queryKey: ['staff-attendance'] }),
   });
 }
+
+// ── School setup ────────────────────────────────────────────────────────────
+
+export function useSetup() {
+  return useQuery({
+    queryKey: ['setup'],
+    queryFn: () => api.get<SetupOverview>('/setup'),
+    staleTime: 60 * 1000,
+  });
+}
+
+/**
+ * Every setup write invalidates the same things.
+ *
+ * Renaming a grade or adding a class changes the section picker on the
+ * attendance screen and the counts on the overview, so refreshing only this
+ * page would leave the rest of the app quietly stale.
+ */
+function useSetupMutation<TBody>(run: (body: TBody) => Promise<unknown>) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: run,
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ['setup'] });
+      void queryClient.invalidateQueries({ queryKey: ['attendance'] });
+      void queryClient.invalidateQueries({ queryKey: ['overview'] });
+      void queryClient.invalidateQueries({ queryKey: ['school-context'] });
+    },
+  });
+}
+
+export const useCreateGradeLevel = () =>
+  useSetupMutation((body: { name: string; level: number; stage?: string }) =>
+    api.post('/setup/grade-levels', body),
+  );
+
+export const useDeleteGradeLevel = () =>
+  useSetupMutation((id: string) => api.delete(`/setup/grade-levels/${id}`));
+
+export const useCreateSection = () =>
+  useSetupMutation(
+    (body: { gradeLevelId: string; name: string; room?: string | null; classTeacherId?: string | null }) =>
+      api.post('/setup/sections', body),
+  );
+
+export const useUpdateSection = () =>
+  useSetupMutation((input: { id: string; classTeacherId: string | null }) =>
+    api.patch(`/setup/sections/${input.id}`, { classTeacherId: input.classTeacherId }),
+  );
+
+export const useDeleteSection = () =>
+  useSetupMutation((id: string) => api.delete(`/setup/sections/${id}`));
+
+export const useCreateSubject = () =>
+  useSetupMutation((body: { code: string; name: string; isExaminable: boolean }) =>
+    api.post('/setup/subjects', body),
+  );
+
+export const useDeleteSubject = () =>
+  useSetupMutation((id: string) => api.delete(`/setup/subjects/${id}`));
+
+export const useCreateHoliday = () =>
+  useSetupMutation((body: { name: string; startDate: string; endDate: string }) =>
+    api.post('/setup/holidays', body),
+  );
+
+export const useDeleteHoliday = () =>
+  useSetupMutation((id: string) => api.delete(`/setup/holidays/${id}`));

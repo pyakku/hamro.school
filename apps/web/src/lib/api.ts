@@ -111,6 +111,7 @@ export const api = {
   post: <T>(path: string, body?: unknown) => rawRequest<T>(path, { method: 'POST', body }),
   put: <T>(path: string, body?: unknown) => rawRequest<T>(path, { method: 'PUT', body }),
   patch: <T>(path: string, body?: unknown) => rawRequest<T>(path, { method: 'PATCH', body }),
+  delete: <T>(path: string) => rawRequest<T>(path, { method: 'DELETE' }),
 };
 
 export async function login(credentials: LoginRequest): Promise<LoginResponse> {
