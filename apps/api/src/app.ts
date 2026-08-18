@@ -81,6 +81,20 @@ export async function buildApp(): Promise<FastifyInstance> {
       callback(null, allowed);
     },
     credentials: true, // the refresh cookie
+
+    /**
+     * Spelled out, because the default is `GET,HEAD,POST` and nothing more.
+     *
+     * That default is invisible until the first non-POST write: taking a
+     * register is a PUT, and the browser refused the preflight while every
+     * server-side test passed, because `app.inject` never speaks CORS. Worth
+     * remembering — a route can be completely correct and still unreachable
+     * from the only client that matters.
+     *
+     * DELETE is absent deliberately. Nothing in this API deletes over HTTP:
+     * records are soft-deleted and money is reversed, never removed.
+     */
+    methods: ['GET', 'HEAD', 'POST', 'PUT', 'PATCH'],
   });
 
   await app.register(cookie);

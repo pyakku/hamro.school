@@ -34,7 +34,7 @@ export class ApiRequestError extends Error {
 }
 
 interface RequestOptions {
-  method?: 'GET' | 'POST' | 'PATCH' | 'DELETE';
+  method?: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE';
   body?: unknown;
   /** Internal: stops a refresh loop when the refresh call itself 401s. */
   retryOnUnauthorised?: boolean;
@@ -109,6 +109,7 @@ async function tryRefresh(): Promise<boolean> {
 export const api = {
   get: <T>(path: string) => rawRequest<T>(path),
   post: <T>(path: string, body?: unknown) => rawRequest<T>(path, { method: 'POST', body }),
+  put: <T>(path: string, body?: unknown) => rawRequest<T>(path, { method: 'PUT', body }),
   patch: <T>(path: string, body?: unknown) => rawRequest<T>(path, { method: 'PATCH', body }),
 };
 

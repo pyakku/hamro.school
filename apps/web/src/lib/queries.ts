@@ -1,5 +1,6 @@
-import { useQuery } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import type {
+  SaveRegisterRequest,
   ExamRow,
   HomeworkSummary,
   InvoiceRow,
@@ -214,5 +215,29 @@ export function useTimetable(sectionId?: string) {
     queryKey: ['timetable', sectionId ?? null],
     queryFn: () => api.get<TimetableCell[]>(query('/timetable', { sectionId })),
     staleTime: 5 * 60 * 1000,
+  });
+}
+
+/**
+ * Saving a register.
+ *
+ * On success every view of attendance is invalidated, not just this register:
+ * the section picker shows which classes still owe one, and the overview counts
+ * them. A teacher who saves and then glances at the rail should not be told
+ * they still owe the register they just filed.
+ */
+export function useSaveRegister() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: (body: SaveRegisterRequest) =>
+      api.put<{ sessionId: string; submittedAt: string; saved: number; absentees: number }>(
+        '/attendance/register',
+        body,
+      ),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ['attendance'] });
+      void queryClient.invalidateQueries({ queryKey: ['overview'] });
+    },
   });
 }
