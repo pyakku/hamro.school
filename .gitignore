@@ -27,3 +27,7 @@ infra/*.tfstate
 infra/*.tfstate.*
 infra/terraform.tfvars
 infra/.terraform.lock.hcl
+
+# TypeScript incremental build state. Machine-local, and it churns on every
+# build — it has no business in a diff.
+*.tsbuildinfo
