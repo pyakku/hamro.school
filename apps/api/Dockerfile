@@ -49,6 +49,15 @@ RUN MIGRATION_DATABASE_URL="$PRISMA_BUILD_URL" \
            pnpm --filter @hamro/api exec prisma generate && \
            pnpm --filter @hamro/api build'
 
+# ── Pruned ──────────────────────────────────────────────────────────────────
+#
+# Its own stage, so `build` stays a stage with the dev dependencies still in it.
+# That matters for one job: the seed is TypeScript run through tsx, and tsx is a
+# dev dependency. With the prune inlined at the end of `build`, targeting that
+# stage produced an already-pruned tree, and `tsx` was simply absent — a
+# reseed then failed with exit 127 and no obvious reason why.
+FROM build AS prune
+
 # Drop the dev dependencies now that everything is compiled. The Prisma CLI is
 # a runtime dependency on purpose — `migrate deploy` runs from this image.
 # confirmModulesPurge=false because switching to a production install changes
@@ -79,7 +88,7 @@ WORKDIR /repo
 
 # pnpm's node_modules are a tree of relative symlinks, so the workspace has to
 # be copied whole rather than cherry-picked.
-COPY --from=build --chown=hamro:hamro /repo /repo
+COPY --from=prune --chown=hamro:hamro /repo /repo
 
 USER hamro
 EXPOSE 4000

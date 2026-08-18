@@ -104,7 +104,7 @@ services:
   # Destructive by design: it deletes a tenant and rebuilds it. Nothing invokes
   # it automatically.
   seed:
-    image: ${SEED_IMAGE:-}
+    image: ${SEED_IMAGE:?set by the reseed workflow}
     profiles: [seed]
     depends_on:
       postgres:
