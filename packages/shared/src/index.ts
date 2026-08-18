@@ -1,4 +1,5 @@
 export * from './money/index.js';
+export * from './dates/index.js';
 export * from './permissions/index.js';
 export * from './tenancy/index.js';
 export * from './i18n/index.js';
@@ -6,3 +7,10 @@ export * from './schemas/common.js';
 export * from './schemas/auth.js';
 export * from './schemas/signup.js';
 export * from './schemas/platform.js';
+export * from './schemas/school.js';
+export * from './schemas/attendance.js';
+export * from './schemas/communication.js';
+export * from './schemas/people.js';
+export * from './schemas/assessment.js';
+export * from './schemas/fees.js';
+export * from './schemas/overview.js';
