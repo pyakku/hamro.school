@@ -21,7 +21,10 @@ permissions:
 jobs:
   deploy:
     if: github.event.inputs.confirm == 'deploy'
-    runs-on: ubuntu-latest
+    # arm64, natively. The box is Graviton, and building arm64 on an x86
+    # runner means QEMU emulating every compile — which took 221s of a 327s
+    # deploy, most of it native modules like argon2. Free for public repos.
+    runs-on: ubuntu-24.04-arm
     environment: production
 
     steps:
