@@ -146,4 +146,19 @@ describe('display', () => {
     const formatted = format(money(480_000n, INR), 'en-IN');
     expect(formatted).toContain('4,800.00');
   });
+
+  it('groups rupees in lakhs, not thousands, for a bare `en`', () => {
+    // ₹58,20,000.00 — what a bursar in Kalimpong reads. The Western
+    // ₹5,820,000.00 is the bug this mapping exists to prevent, and it is
+    // invisible until an amount passes a lakh.
+    expect(format(money(582_000_000n, INR))).toContain('58,20,000.00');
+  });
+
+  it('leaves currencies outside the subcontinent grouped in thousands', () => {
+    expect(format(money(582_000_000n, currency('AED', 2)))).toContain('5,820,000.00');
+  });
+
+  it('never overrides a locale the school actually set', () => {
+    expect(format(money(582_000_000n, INR), 'en-US')).toContain('5,820,000.00');
+  });
 });
