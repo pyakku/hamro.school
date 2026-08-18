@@ -56,7 +56,7 @@ Estimates, on-demand, `ap-south-1`. `us-east-1` saves about $0.30/month and
 adds ~250ms round-trip for users in Nepal and India — not worth it.
 
 Plus ~$0.03 for the container image in ECR. Not on the bill: SSM, Let's
-Encrypt, and GitHub Actions on a public runner.
+Encrypt, and the build, which happens on whatever machine deploys.
 
 ## First deploy
 
@@ -93,47 +93,72 @@ marketing site keeps working untouched.
 Caddy gets a certificate on its own within a minute of that resolving. Nothing
 to configure and nothing to renew.
 
-**4. Tell GitHub where to deploy.** Four repository variables, from the
-Terraform outputs:
-
-```bash
-gh variable set AWS_REGION      --body "$(cd infra && tofu output -raw region)"
-gh variable set AWS_DEPLOY_ROLE --body "$(cd infra && tofu output -raw github_actions_role_arn)"
-gh variable set ARTIFACT_BUCKET --body "$(cd infra && tofu output -raw backup_bucket)"
-gh variable set ECR_REPOSITORY  --body "$(cd infra && tofu output -raw ecr_repository_url)"
-gh variable set APP_HOSTNAME    --body "$(cd infra && tofu output -raw url | sed 's|https://||')"
-```
-
-**5. Deploy.**
-
-```bash
-gh workflow run deploy.yml -f confirm=deploy      # or the Actions tab
-```
-
-Builds the ARM image and pushes it to ECR, builds the web app, uploads both to
-S3, then drives the instance over SSM: pull, migrate, restart, verify
-`/health`. It fails the job if the health check never passes.
-
-From a laptop instead, with Docker installed:
+**4. Deploy.**
 
 ```bash
 ./deploy/deploy.sh
 ```
 
+Builds the ARM image and pushes it to ECR, builds the web app, uploads both to
+S3, then drives the instance over SSM: pull, migrate, restart. About 90 seconds
+from an Apple Silicon machine, which builds arm64 natively.
+
+It proves the deploy by asking the instance which image it is running and
+comparing it to the SHA. A health check alone is not proof: the *previous*
+container answers `/health` perfectly well, so a rollout that never happened
+looks exactly like one that did.
+
+Docker is the only prerequisite. Colima is enough, and needs no licence:
+
+```bash
+brew install colima docker docker-buildx
+colima start --arch aarch64 --cpu 4 --memory 6
+mkdir -p ~/.docker/cli-plugins
+ln -sfn "$(brew --prefix)/opt/docker-buildx/bin/docker-buildx" \
+  ~/.docker/cli-plugins/docker-buildx
+```
+
+**5. Refresh the demo data**, before a demo or whenever it has aged:
+
+```bash
+./deploy/reseed-demo.sh
+```
+
+The seed anchors on the day it runs, so registers stop at today and homework is
+due this week. Deletes and rebuilds one tenant; every other school is untouched.
+
+## No CI, on purpose
+
+There are no GitHub Actions workflows. Deploys run from a laptop, and the tests
+run before a push:
+
+```bash
+git config core.hooksPath .githooks     # once per clone
+```
+
+`.githooks/pre-push` runs the typecheck and the suite. It skips the tests, with
+a warning, when Postgres is not up — they need a real database and a machine
+without one was never going to run them. `git push --no-verify` when you mean
+to skip it.
+
+The trade is worth stating plainly. A laptop deploy uses whatever AWS
+credentials you have rather than a short-lived OIDC token, nothing stops two
+people deploying at once, and there is no record of who shipped what beyond the
+image tag. For one person on one machine that is a fair price for ninety-second
+deploys and no dependence on a build service.
+
 ## How the pipeline authenticates
 
-Nothing long-lived, anywhere:
+Nothing long-lived on a server, anywhere:
 
-- **GitHub → AWS**: OIDC. Actions presents a token proving it is this repo on
-  `main`; AWS trades it for credentials that expire in an hour. There is no
-  access key in a GitHub secret to leak or rotate.
 - **Instance → ECR**: the instance's IAM role. No registry credential on the
   box.
 - **Deployer → instance**: SSM Run Command. No SSH key, port 22 closed.
+- **Deployer → AWS**: your own credentials, from `aws login`.
 
-Deploys are `workflow_dispatch` with a typed confirmation rather than automatic
-on push. Until there is enough coverage to trust a green build completely,
-shipping should be a decision someone makes.
+Deploying is a command someone runs, not something a push triggers. Until there
+is enough coverage to trust a green build completely, shipping should be a
+decision someone makes.
 
 ## Day to day
 

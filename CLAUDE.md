@@ -274,6 +274,10 @@ mock would happily agree with a bug.
 Rate limits stay **on** in tests; tests that don't care about them use different
 client IPs. A limiter disabled in test is a limiter nobody notices breaking.
 
+There is no CI. The suite runs before a push instead — enable it once per clone
+with `git config core.hooksPath .githooks`. Deploys run from a laptop with
+`./deploy/deploy.sh`; see [docs/deployment.md](docs/deployment.md).
+
 ## Working style
 
 - Small, focused commits with clear messages.
