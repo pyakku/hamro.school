@@ -879,6 +879,63 @@ async function main(): Promise<void> {
     }
   }
 
+  /**
+   * The staff return, over the same days as the class registers.
+   *
+   * Teachers are in far more reliably than children are, so the rates here are
+   * low on purpose — but not zero, because a screen where every row is green
+   * shows nothing about how the four states read next to each other.
+   */
+  let staffDayCount = 0;
+  let staffRecordCount = 0;
+
+  const allStaff = await prisma.staffProfile.findMany({
+    where: { schoolId, status: 'ACTIVE' },
+    select: { id: true },
+  });
+
+  for (const day of schoolDays) {
+    const staffDay = await prisma.staffAttendanceDay.create({
+      data: {
+        schoolId,
+        academicYearId: thisYear.id,
+        date: day,
+        takenByUserId: adminUserId,
+        submittedAt: new Date(day.getTime() + 8 * 60 * 60 * 1000),
+        lockedAt: day < addDays(attendanceUntil, -14) ? new Date(day.getTime() + 86_400_000) : null,
+      },
+    });
+    staffDayCount += 1;
+
+    const records = allStaff.map((member) => {
+      let status: AttendanceStatus = 'PRESENT';
+      let minutesLate: number | null = null;
+
+      if (chance(0.03)) {
+        status = chance(0.7) ? 'ABSENT_APPROVED' : 'ABSENT_UNEXPLAINED';
+      } else if (chance(0.04)) {
+        status = 'LATE';
+        minutesLate = between(5, 25);
+      }
+
+      return {
+        schoolId,
+        dayId: staffDay.id,
+        staffId: member.id,
+        date: day,
+        status,
+        minutesLate,
+        recordedByUserId: adminUserId,
+      };
+    });
+
+    await prisma.staffAttendanceRecord.createMany({ data: records });
+    staffRecordCount += records.length;
+  }
+
+  // Today is left untaken on purpose, so the office has a return to file and
+  // the screen has something to do on the day of a demo.
+
   // ── Fees ─────────────────────────────────────────────────────────────────
   //
   // Every amount is minor units. ₹48,000 is 4_800_000n paise. No floats reach
@@ -1203,6 +1260,7 @@ async function main(): Promise<void> {
     Students         ${studentRows.length}
     Staff            ${teachers.length} teachers + admin, accounts, driver
     Attendance       ${sessionCount} sessions, ${recordCount} records over ${schoolDays.length} school days
+    Staff attendance ${staffDayCount} returns, ${staffRecordCount} records
     Marks            ${markCount} raw marks (Unit Test 1)
     Invoices         ${invoices.length} for Term 1 · ${unpaid} not fully paid
     Grading scales   Percentage (A+ to E), GPA 4.0

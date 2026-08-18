@@ -14,6 +14,7 @@ import Timetable from './routes/timetable.js';
 import Students from './routes/students.js';
 import Children from './routes/children.js';
 import Staff from './routes/staff.js';
+import StaffAttendance from './routes/staff-attendance.js';
 import Exams from './routes/exams.js';
 import Fees from './routes/fees.js';
 import Payments from './routes/payments.js';
@@ -96,6 +97,7 @@ function LocalisedRoutes() {
             <Route path="/children" element={<Children />} />
             <Route path="/students" element={<Students />} />
             <Route path="/staff" element={<Staff />} />
+            <Route path="/staff-attendance" element={<StaffAttendance />} />
             <Route path="/exams" element={<Exams />} />
             <Route path="/fees" element={<Fees />} />
             <Route path="/payments" element={<Payments />} />

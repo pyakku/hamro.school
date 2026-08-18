@@ -49,6 +49,15 @@ export const PERMISSIONS = [
   'guardian:write',
   'staff:read',
   'staff:write',
+  /**
+   * Whether staff were in. Separate from `attendance:*`, which is about
+   * children: the office may need to run a staff return without gaining any
+   * access to a class register, and a teacher may see their own record without
+   * seeing a colleague's. One permission for both would make those impossible
+   * to express.
+   */
+  'staff_attendance:read',
+  'staff_attendance:write',
   'enrolment:read',
   'enrolment:write',
   'promotion:run',
@@ -139,6 +148,8 @@ export const ROLE_GRANTS: Readonly<Record<Role, readonly Grant[]>> = {
       'guardian:write',
       'staff:read',
       'staff:write',
+      'staff_attendance:read',
+      'staff_attendance:write',
       'enrolment:read',
       'enrolment:write',
       'promotion:run',
@@ -230,7 +241,10 @@ export const ROLE_GRANTS: Readonly<Record<Role, readonly Grant[]>> = {
       'grading_scale:read',
       'report_card:read',
     ),
-    ...scoped('SELF', 'leave:request', 'device:register'),
+    // Their own attendance, and nobody else's. A teacher checking whether
+    // Tuesday was recorded is reasonable; reading the staff room's record is
+    // an HR matter and not theirs.
+    ...scoped('SELF', 'leave:request', 'device:register', 'staff_attendance:read'),
   ],
 
   /** Sees their own children and nothing else in the school. */

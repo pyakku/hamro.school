@@ -18,6 +18,7 @@ import platformRoutes from './platform/routes.js';
 import schoolRoutes from './school/routes.js';
 import overviewRoutes from './overview/routes.js';
 import attendanceRoutes from './attendance/routes.js';
+import staffAttendanceRoutes from './staff-attendance/routes.js';
 import communicationRoutes from './communication/routes.js';
 import peopleRoutes from './people/routes.js';
 import feeRoutes from './fees/routes.js';
@@ -125,6 +126,7 @@ export async function buildApp(): Promise<FastifyInstance> {
   await app.register(schoolRoutes);
   await app.register(overviewRoutes);
   await app.register(attendanceRoutes);
+  await app.register(staffAttendanceRoutes);
   await app.register(communicationRoutes);
   await app.register(peopleRoutes);
   await app.register(feeRoutes);

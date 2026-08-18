@@ -112,6 +112,17 @@ export const NAV_ITEMS: readonly NavItem[] = [
   },
   {
     /**
+     * Read is the office at ALL and a teacher at SELF, so this appears for
+     * both — but they are different screens behind it: the staff room, or a
+     * single row. The page reads what the server sent rather than the role.
+     */
+    path: '/staff-attendance',
+    label: 'nav.staff_attendance',
+    permission: 'staff_attendance:read',
+    group: 'school',
+  },
+  {
+    /**
      * `exam:read`, not `mark:read` — the permission the page's first request
      * actually needs. A guardian holds `mark:read` for their own children but
      * no `exam:read`, so keying this on marks put an Exams link in a parent's
