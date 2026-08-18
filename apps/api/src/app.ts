@@ -15,6 +15,14 @@ import errorHandlerPlugin from './plugins/error-handler.js';
 import authRoutes from './auth/routes.js';
 import signupRoutes from './signup/routes.js';
 import platformRoutes from './platform/routes.js';
+import schoolRoutes from './school/routes.js';
+import overviewRoutes from './overview/routes.js';
+import attendanceRoutes from './attendance/routes.js';
+import communicationRoutes from './communication/routes.js';
+import peopleRoutes from './people/routes.js';
+import feeRoutes from './fees/routes.js';
+import assessmentRoutes from './assessment/routes.js';
+import timetableRoutes from './timetable/routes.js';
 import { rawPrisma } from './db/client.js';
 
 export async function buildApp(): Promise<FastifyInstance> {
@@ -100,6 +108,14 @@ export async function buildApp(): Promise<FastifyInstance> {
   await app.register(authRoutes);
   await app.register(signupRoutes);
   await app.register(platformRoutes);
+  await app.register(schoolRoutes);
+  await app.register(overviewRoutes);
+  await app.register(attendanceRoutes);
+  await app.register(communicationRoutes);
+  await app.register(peopleRoutes);
+  await app.register(feeRoutes);
+  await app.register(assessmentRoutes);
+  await app.register(timetableRoutes);
 
   return app;
 }
