@@ -179,11 +179,27 @@ export function parseDecimalString(input: string, c: Currency): Money {
 }
 
 /**
+ * Currencies whose readers group in lakhs and crores.
+ *
+ * Grouping is a property of the locale, not the currency — but our only
+ * message catalogue is `en`, so every school in the subcontinent is sitting on
+ * a bare `en` that formats ₹5,820,000.00. A bursar in Kalimpong reads that as
+ * wrong: it is ₹58,20,000.00. Bare `en` plus one of these currencies resolves
+ * to `en-IN`; a school that sets a real locale keeps whatever it set.
+ */
+const LAKH_CURRENCIES = new Set(['INR', 'NPR', 'PKR', 'BDT', 'LKR']);
+
+function numberLocale(locale: string, currencyCode: string): string {
+  if (locale !== 'en') return locale;
+  return LAKH_CURRENCIES.has(currencyCode) ? 'en-IN' : 'en-GB';
+}
+
+/**
  * Display string for a locale. `Intl.NumberFormat` takes an exact decimal
  * string, so the value never passes through a float on its way to the screen.
  */
 export function format(m: Money, locale = 'en'): string {
-  return new Intl.NumberFormat(locale, {
+  return new Intl.NumberFormat(numberLocale(locale, m.currency.code), {
     style: 'currency',
     currency: m.currency.code,
     minimumFractionDigits: m.currency.minorUnits,
