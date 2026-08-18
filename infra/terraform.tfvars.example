@@ -13,7 +13,7 @@ region = "ap-south-1"
 # Caddy serves the web app and proxies /api from this one name, so there is no
 # second hostname and no cross-origin anything.
 hostname   = "app.hamro.school"
-acme_email = "pyakku@gmail.com"
+acme_email = "you@your-domain.example"
 
 # Adopt an Elastic IP you already own rather than allocating a second one. AWS
 # bills every public IPv4 address whether it is attached or not, so an idle one
