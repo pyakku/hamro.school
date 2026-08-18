@@ -20,6 +20,7 @@
     "db:down": "docker compose down",
     "db:migrate": "pnpm --filter @hamro/api db:migrate",
     "db:reset": "pnpm --filter @hamro/api db:reset",
+    "db:reset-demo": "pnpm --filter @hamro/api db:reset-demo",
     "db:seed": "pnpm --filter @hamro/api db:seed",
     "db:studio": "pnpm --filter @hamro/api db:studio"
   },

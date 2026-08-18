@@ -57,6 +57,30 @@ const time = (hour: number, minute: number): Date => new Date(Date.UTC(1970, 0, 
 
 const DEMO_PASSWORD = 'hamro-demo-2026';
 
+const SCHOOL_TIMEZONE = 'Asia/Kolkata';
+
+/**
+ * The demo's "today", read in the school's timezone.
+ *
+ * Everything time-sensitive below hangs off this rather than a date typed into
+ * the file. A seed anchored to the afternoon it was written looks fine that
+ * week and then quietly rots: registers stop before today, homework is all
+ * overdue, and the first screen anybody opens is empty. Demo data has to be
+ * true on the day it is shown.
+ */
+const DEMO_TODAY: Date = (() => {
+  const [year, month, day] = new Intl.DateTimeFormat('en-CA', {
+    timeZone: SCHOOL_TIMEZONE,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  })
+    .format(new Date())
+    .split('-')
+    .map(Number);
+  return new Date(Date.UTC(year!, month! - 1, day!));
+})();
+
 /** Every identifier in this school is `<username>@modelschool`. */
 const SCHOOL_SLUG = 'modelschool';
 
@@ -111,7 +135,7 @@ async function main(): Promise<void> {
       slug: SCHOOL_SLUG,
       name: 'Model School',
       legalName: 'Model School Pvt. Ltd.',
-      timezone: 'Asia/Kolkata',
+      timezone: SCHOOL_TIMEZONE,
       currency: 'INR',
       currencyMinorUnits: 2,
       defaultLocale: 'en',
@@ -543,6 +567,29 @@ async function main(): Promise<void> {
     }
   }
 
+  /**
+   * One student login.
+   *
+   * Older students sign in themselves — and the STUDENT role is the narrowest
+   * one that still sees academic records, so it is the one most likely to be
+   * got wrong. Without an account to sign in as, nobody ever looks at it.
+   *
+   * The account hangs off an existing Student row rather than inventing a
+   * person: `Student.userId` is how identity attaches to a child, and a login
+   * with no student record behind it would see nothing and prove nothing.
+   */
+  const studentLogin = studentRows.find((row) => row.level === 8) ?? studentRows[0]!;
+  const studentUserId = await createUser(
+    studentLogin.firstName,
+    studentLogin.lastName,
+    'student',
+    ['STUDENT'],
+  );
+  await prisma.student.update({
+    where: { id: studentLogin.id },
+    data: { userId: studentUserId },
+  });
+
   // ── Grading scales ───────────────────────────────────────────────────────
   //
   // Two of them, because the whole point is that a school configures its own.
@@ -668,7 +715,18 @@ async function main(): Promise<void> {
   // session at all, so it never lands in a denominator — which is the whole
   // reason the session table exists.
 
-  const attendanceUntil = date(2026, 8, 12);
+  // Registers run to *yesterday*; today is handled separately below, because a
+  // real morning has some registers in and some still owed. Clamped into
+  // term 1 so that seeding during the winter holidays still produces a term
+  // with attendance in it rather than nothing at all.
+  /** An instant `daysAgo` before the demo's today, at a wall-clock hour. */
+  const agoAt = (daysAgo: number, hour: number, minute = 0): Date =>
+    new Date(addDays(DEMO_TODAY, -daysAgo).getTime() + (hour * 60 + minute) * 60_000);
+
+  const clamp = (value: Date, min: Date, max: Date): Date =>
+    value < min ? min : value > max ? max : value;
+
+  const attendanceUntil = clamp(addDays(DEMO_TODAY, -1), term1.startDate, term1.endDate);
   const schoolDays: Date[] = [];
   for (let cursor = term1.startDate; cursor <= attendanceUntil; cursor = addDays(cursor, 1)) {
     const weekday = cursor.getUTCDay(); // 0 = Sunday
@@ -742,6 +800,74 @@ async function main(): Promise<void> {
             sessionId: session.id,
             enrolmentId: row.enrolmentId,
             date: day,
+            status,
+            minutesLate,
+            recordedByUserId: classTeacherUserId,
+          };
+        });
+
+      await prisma.attendanceRecord.createMany({ data: records });
+      recordCount += records.length;
+    }
+  }
+
+  /**
+   * Today, half done.
+   *
+   * A demo where every register is already in shows nothing interesting: the
+   * number an administrator actually opens this product for in the morning is
+   * how many teachers still owe one. So the first half of the sections have
+   * submitted and the rest have not — which also exercises the "register due"
+   * path on a teacher's overview and the marigold dot in the section picker.
+   */
+  const todayIsSchoolDay =
+    DEMO_TODAY >= term1.startDate &&
+    DEMO_TODAY <= term1.endDate &&
+    DEMO_TODAY.getUTCDay() !== 0 &&
+    DEMO_TODAY.getUTCDay() !== 6 &&
+    !excludedDates.has(DEMO_TODAY.toISOString().slice(0, 10));
+
+  if (todayIsSchoolDay) {
+    const takenToday = thisYearSections.slice(0, Math.ceil(thisYearSections.length / 2));
+
+    for (const section of takenToday) {
+      const roster = enrolmentsBySection.get(section.id) ?? [];
+      const classTeacherUserId =
+        teachers[thisYearSections.indexOf(section) % teachers.length]!.userId;
+
+      const session = await prisma.attendanceSession.create({
+        data: {
+          schoolId,
+          academicYearId: thisYear.id,
+          sectionId: section.id,
+          date: DEMO_TODAY,
+          sessionKey: 'DAY',
+          takenByUserId: classTeacherUserId,
+          submittedAt: new Date(DEMO_TODAY.getTime() + 9 * 60 * 60 * 1000),
+          lockedAt: null,
+        },
+      });
+      sessionCount += 1;
+
+      const records = roster
+        .filter((row) => (enrolmentStartDates.get(row.enrolmentId) ?? DEMO_TODAY) <= DEMO_TODAY)
+        .map((row) => {
+          const absenteeism = strugglers.has(row.enrolmentId) ? 0.22 : 0.04;
+          let status: AttendanceStatus = 'PRESENT';
+          let minutesLate: number | null = null;
+
+          if (chance(absenteeism)) {
+            status = chance(0.45) ? 'ABSENT_APPROVED' : 'ABSENT_UNEXPLAINED';
+          } else if (chance(0.05)) {
+            status = 'LATE';
+            minutesLate = between(5, 35);
+          }
+
+          return {
+            schoolId,
+            sessionId: session.id,
+            enrolmentId: row.enrolmentId,
+            date: DEMO_TODAY,
             status,
             minutesLate,
             recordedByUserId: classTeacherUserId,
@@ -1024,9 +1150,9 @@ async function main(): Promise<void> {
           postedByStaffId: assignment.staffId,
           body,
           dueDate: addDays(attendanceUntil, dueInDays),
-          publishedAt: new Date(Date.UTC(2026, 7, 12, 10, 0)),
+          publishedAt: agoAt(1, 10, 0),
           notifyGuardians: true,
-          notificationSentAt: new Date(Date.UTC(2026, 7, 12, 10, 1)),
+          notificationSentAt: agoAt(1, 10, 1),
         },
       });
     }
@@ -1039,7 +1165,7 @@ async function main(): Promise<void> {
       title: 'Parent–teacher meeting, Saturday 22 August',
       body: 'Slots are 15 minutes and run from 9:00 am. Book through the office.',
       scope: 'SCHOOL',
-      publishedAt: new Date(Date.UTC(2026, 7, 10, 9, 0)),
+      publishedAt: agoAt(7, 9, 0),
       isPinned: true,
       authorUserId: adminUserId,
     },
@@ -1053,13 +1179,21 @@ async function main(): Promise<void> {
       body: 'Please return the signed form with the ₹450 contribution.',
       scope: 'GRADE_LEVEL',
       gradeLevelId: gradeLevels[2]!.id,
-      publishedAt: new Date(Date.UTC(2026, 7, 11, 14, 30)),
+      publishedAt: agoAt(6, 14, 30),
       authorUserId: adminUserId,
     },
   });
 
   // ── Summary ──────────────────────────────────────────────────────────────
-  const unpaid = invoices.length - (await prisma.invoice.count({ where: { status: 'PAID' } }));
+  // Scoped to this school. The seed runs as the owner role, which is exempt
+  // from row-level security, so an unqualified count here quietly totals every
+  // tenant in the database — and prints a negative number the moment a second
+  // school exists.
+  const unpaid =
+    invoices.length -
+    (await prisma.invoice.count({
+      where: { schoolId, academicYearId: thisYear.id, status: 'PAID' },
+    }));
 
   console.log(`
   Model School seeded.
@@ -1079,6 +1213,7 @@ async function main(): Promise<void> {
     accounts           accounts
     radhika.karthik    teacher
     parent001          parent
+    student            student
     driver             driver
 
     From app.hamro.school add the suffix, e.g. admin@${SCHOOL_SLUG}.
