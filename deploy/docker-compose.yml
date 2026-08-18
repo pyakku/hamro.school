@@ -90,6 +90,34 @@ services:
         limits:
           memory: 384M
 
+  # ── Demo data, on demand ────────────────────────────────────────────────
+  #
+  # Behind a profile, so it is never started by `up` and never restarts. It
+  # exists because the runtime image cannot seed: the Dockerfile prunes dev
+  # dependencies, and the seed is TypeScript run through tsx. This service
+  # points at the *build* stage of the same Dockerfile, which still has both.
+  #
+  # It is here rather than as a bare `docker run` so that it lands on the
+  # compose network — Postgres publishes no ports, so nothing outside this
+  # network can reach the database at all.
+  #
+  # Destructive by design: it deletes a tenant and rebuilds it. Nothing invokes
+  # it automatically.
+  seed:
+    image: ${SEED_IMAGE:-}
+    profiles: [seed]
+    depends_on:
+      postgres:
+        condition: service_healthy
+    working_dir: /repo/apps/api
+    environment:
+      # The owner role, which owns the tables and is exempt from RLS — the seed
+      # writes a whole school in one pass and could not otherwise.
+      MIGRATION_DATABASE_URL: ${MIGRATION_DATABASE_URL:?}
+      DATABASE_URL: ${DATABASE_URL:?}
+    entrypoint: ["/bin/sh", "-c"]
+    command: ["echo 'Run me with an explicit command.'; exit 1"]
+
   caddy:
     image: caddy:2-alpine
     restart: unless-stopped
