@@ -93,10 +93,12 @@ export async function buildApp(): Promise<FastifyInstance> {
      * remembering — a route can be completely correct and still unreachable
      * from the only client that matters.
      *
-     * DELETE is absent deliberately. Nothing in this API deletes over HTTP:
-     * records are soft-deleted and money is reversed, never removed.
+     * DELETE is here for school setup, which removes a grade level or a
+     * subject. The row is soft-deleted rather than destroyed, and the request
+     * is refused outright if anything still references it — money is still
+     * never removed, only reversed.
      */
-    methods: ['GET', 'HEAD', 'POST', 'PUT', 'PATCH'],
+    methods: ['GET', 'HEAD', 'POST', 'PUT', 'PATCH', 'DELETE'],
   });
 
   await app.register(cookie);

@@ -19,6 +19,7 @@ import Exams from './routes/exams.js';
 import Fees from './routes/fees.js';
 import Payments from './routes/payments.js';
 import Settings from './routes/settings.js';
+import Setup from './routes/setup.js';
 import { isPlatformConsole } from './lib/tenant.js';
 
 const queryClient = new QueryClient({
@@ -101,6 +102,7 @@ function LocalisedRoutes() {
             <Route path="/exams" element={<Exams />} />
             <Route path="/fees" element={<Fees />} />
             <Route path="/payments" element={<Payments />} />
+            <Route path="/setup" element={<Setup />} />
             <Route path="/settings" element={<Settings />} />
           </Route>
 

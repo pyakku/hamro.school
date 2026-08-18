@@ -139,6 +139,12 @@ export const NAV_ITEMS: readonly NavItem[] = [
     group: 'school',
   },
   {
+    path: '/setup',
+    label: 'nav.setup',
+    permission: 'structure:write',
+    group: 'school',
+  },
+  {
     path: '/settings',
     label: 'nav.settings',
     permission: 'school:read',
