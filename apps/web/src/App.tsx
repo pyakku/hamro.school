@@ -3,9 +3,21 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { LocaleProvider } from './lib/i18n.js';
 import { SessionProvider, useSession } from './lib/session.js';
 import SignIn from './routes/sign-in.js';
-import SignedIn from './routes/signed-in.js';
 import Signup from './routes/signup.js';
 import Admin from './routes/admin.js';
+import { AppShell } from './shell/AppShell.js';
+import Overview from './routes/overview.js';
+import Attendance from './routes/attendance.js';
+import Homework from './routes/homework.js';
+import Notices from './routes/notices.js';
+import Timetable from './routes/timetable.js';
+import Students from './routes/students.js';
+import Children from './routes/children.js';
+import Staff from './routes/staff.js';
+import Exams from './routes/exams.js';
+import Fees from './routes/fees.js';
+import Payments from './routes/payments.js';
+import Settings from './routes/settings.js';
 import { isPlatformConsole } from './lib/tenant.js';
 
 const queryClient = new QueryClient({
@@ -68,7 +80,28 @@ function LocalisedRoutes() {
         <Routes>
           <Route path="/sign-in" element={<SignIn />} />
           <Route path="/signup" element={<Signup />} />
-          <Route path="/" element={<SignedIn />} />
+
+          {/*
+            Everything behind the shell. The routes exist for every role; what
+            a person may actually load is decided by the server, per request.
+            The rail hides links a user has no use for, which is a courtesy —
+            typing the path directly gets the same 403 either way.
+          */}
+          <Route element={<AppShell />}>
+            <Route path="/" element={<Overview />} />
+            <Route path="/attendance" element={<Attendance />} />
+            <Route path="/homework" element={<Homework />} />
+            <Route path="/notices" element={<Notices />} />
+            <Route path="/timetable" element={<Timetable />} />
+            <Route path="/children" element={<Children />} />
+            <Route path="/students" element={<Students />} />
+            <Route path="/staff" element={<Staff />} />
+            <Route path="/exams" element={<Exams />} />
+            <Route path="/fees" element={<Fees />} />
+            <Route path="/payments" element={<Payments />} />
+            <Route path="/settings" element={<Settings />} />
+          </Route>
+
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </BrowserRouter>
