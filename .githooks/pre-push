@@ -1,0 +1,32 @@
+#!/usr/bin/env bash
+# Runs before every push. This is what CI used to do.
+#
+# Enable it once per clone:
+#   git config core.hooksPath .githooks
+#
+# Skip it deliberately when you mean to:
+#   git push --no-verify
+#
+# Typecheck always runs; it needs nothing but the repo. The tests need a real
+# Postgres, because the things most worth testing here — row-level security, an
+# append-only grant, a partial unique index — only exist in the database and a
+# mock would happily agree with a bug. If Postgres is not up, the hook says so
+# and lets the push through rather than blocking on a machine that was never
+# going to run them.
+set -euo pipefail
+
+cd "$(git rev-parse --show-toplevel)"
+
+echo "→ Typecheck"
+pnpm -r typecheck
+
+DB_PORT="$(grep -oE 'localhost:[0-9]+' .env 2>/dev/null | head -1 | cut -d: -f2 || true)"
+DB_PORT="${DB_PORT:-5432}"
+
+if nc -z localhost "$DB_PORT" 2>/dev/null; then
+  echo "→ Tests"
+  pnpm test
+else
+  echo "→ Postgres is not up on :${DB_PORT}; skipping tests." >&2
+  echo "  Start it with 'pnpm db:up' and push again to run them." >&2
+fi

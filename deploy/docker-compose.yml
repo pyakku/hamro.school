@@ -104,7 +104,11 @@ services:
   # Destructive by design: it deletes a tenant and rebuilds it. Nothing invokes
   # it automatically.
   seed:
-    image: ${SEED_IMAGE:?set by the reseed workflow}
+    # A default, not a required variable. `docker compose pull` interpolates
+    # every service in the file — including ones hidden behind a profile — so
+    # `${SEED_IMAGE:?...}` fails the *deploy*, which never sets it. Set by
+    # deploy/reseed-demo.sh when it actually runs this.
+    image: ${SEED_IMAGE:-hamro/seed-image-not-set}
     profiles: [seed]
     depends_on:
       postgres:

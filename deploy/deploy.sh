@@ -169,7 +169,50 @@ aws ssm get-command-invocation \
   --query '{Status:Status,Out:StandardOutputContent,Err:StandardErrorContent}' \
   --output text
 
+# The status was previously printed and then ignored, so a rollout that failed
+# on the instance carried on to the health check below and passed it.
+SSM_STATUS=$(aws ssm get-command-invocation \
+  --region "$REGION" \
+  --command-id "$COMMAND_ID" \
+  --instance-id "$INSTANCE_ID" \
+  --query 'Status' --output text)
+
+if [ "$SSM_STATUS" != "Success" ]; then
+  echo "✗ The rollout failed on the instance (${SSM_STATUS})." >&2
+  exit 1
+fi
+
 # ── 5. Prove it ─────────────────────────────────────────────────────────────
+#
+# Health alone is not proof of a deploy. The *previous* container answers
+# /health perfectly well, so a rollout that never happened used to print
+# "✓ <sha> is live" and exit 0 — which is the worst possible outcome, because
+# it is indistinguishable from success. Ask the instance what it is actually
+# running and compare.
+echo "→ Checking what is running on the instance"
+RUNNING=$(aws ssm send-command \
+  --region "$REGION" \
+  --instance-ids "$INSTANCE_ID" \
+  --document-name "AWS-RunShellScript" \
+  --parameters 'commands=["docker ps --format {{.Image}} | grep hamro-api | head -1"]' \
+  --query 'Command.CommandId' --output text)
+
+aws ssm wait command-executed \
+  --region "$REGION" --command-id "$RUNNING" --instance-id "$INSTANCE_ID" 2>/dev/null || true
+
+RUNNING_IMAGE=$(aws ssm get-command-invocation \
+  --region "$REGION" --command-id "$RUNNING" --instance-id "$INSTANCE_ID" \
+  --query 'StandardOutputContent' --output text | tr -d '[:space:]')
+
+case "$RUNNING_IMAGE" in
+  *":${SHA}") echo "  running ${RUNNING_IMAGE}" ;;
+  *)
+    echo "✗ The instance is running ${RUNNING_IMAGE:-nothing}, not ${SHA}." >&2
+    echo "  The rollout did not take. Nothing was deployed." >&2
+    exit 1
+    ;;
+esac
+
 echo "→ Checking https://${HOSTNAME}/health"
 for attempt in $(seq 1 20); do
   if curl -fsS "https://${HOSTNAME}/health" >/dev/null 2>&1; then
