@@ -27,19 +27,25 @@ pnpm db:seed
 pnpm dev            # API on :4000, web on :5173
 ```
 
-Sign in with school `greenhill`, password `hamro-demo-2026`:
+Sign in with school `modelschool`, password `hamro-demo-2026`. These are
+usernames rather than email addresses — nothing can be sent to them.
 
 | Account | Role |
 |---|---|
-| `admin@greenhill.example` | School admin |
-| `accounts@greenhill.example` | Accounts |
-| `radhika.karthik@greenhill.example` | Teacher |
-| `parent001@greenhill.example` | Parent |
-| `driver@greenhill.example` | Driver |
+| `admin@modelschool` | School admin |
+| `accounts@modelschool` | Accounts |
+| `radhika.karthik@modelschool` | Teacher |
+| `parent001@modelschool` | Parent |
+| `student@modelschool` | Student |
+| `driver@modelschool` | Driver |
+
+On a school's own subdomain the suffix is implied, so you can type just `admin`.
 
 The seed builds one school with two academic years, 123 students across grades
-6–8, staff, a term of attendance, a fee ledger with real arrears, and two
-grading scales.
+6–8, staff, a term of attendance and staff attendance, a fee ledger with real
+arrears, and two grading scales. It anchors on the day it runs, so registers
+stop at today and homework is due this week; `pnpm db:reset-demo && pnpm db:seed`
+rebuilds just the demo school when the data goes stale.
 
 **Not using Docker?** Run `docker/postgres/init/01-app-role.sql` against your
 database as its owner first — migrations refuse to run without the `hamro_app`

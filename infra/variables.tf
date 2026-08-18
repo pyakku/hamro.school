@@ -57,7 +57,16 @@ variable "base_domain" {
 variable "acme_email" {
   description = "Let's Encrypt sends expiry warnings here. Caddy renews automatically; this is the safety net."
   type        = string
-  default     = "pyakku@gmail.com"
+
+  # No default, deliberately. A placeholder would register a contact address
+  # that nobody reads, which is worse than none: the one message it ever sends
+  # is the one warning you that renewal has stopped working. Failing at plan
+  # time is the cheaper mistake. Set it in terraform.tfvars, which is
+  # gitignored — this file is public.
+  validation {
+    condition     = can(regex("^[^@[:space:]]+@[^@[:space:]]+\\.[^@[:space:]]+$", var.acme_email))
+    error_message = "Set acme_email in terraform.tfvars to an address somebody actually reads."
+  }
 }
 
 variable "backup_retention_days" {
