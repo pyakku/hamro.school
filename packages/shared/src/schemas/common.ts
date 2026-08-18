@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { isLocalDate } from '../dates/index.js';
 
 /**
  * Validation shared by the API and the web app.
@@ -38,13 +39,13 @@ export const passwordSchema = z
   .min(12, { message: 'validation.password.too_short' })
   .max(200);
 
-/** A local calendar date: "2026-08-13". Never an instant. */
-export const localDateSchema = z
-  .string()
-  .regex(/^\d{4}-\d{2}-\d{2}$/)
-  .refine((value) => !Number.isNaN(Date.parse(`${value}T00:00:00Z`)), {
-    message: 'error.validation',
-  });
+/**
+ * A local calendar date: "2026-08-13". Never an instant.
+ *
+ * Validated by `isLocalDate`, which round-trips the parts rather than trusting
+ * `Date.parse` — that accepts "2026-02-30" and quietly rolls it to 2 March.
+ */
+export const localDateSchema = z.string().refine(isLocalDate, { message: 'error.validation' });
 
 /** Money on the wire: a string, so no amount ever becomes a float. */
 export const moneyWireSchema = z.object({
