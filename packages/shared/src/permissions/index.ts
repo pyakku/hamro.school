@@ -243,6 +243,12 @@ export const ROLE_GRANTS: Readonly<Record<Role, readonly Grant[]>> = {
       'timetable:read',
       'attendance:read',
       'homework:read',
+      // `exam:read` is what makes a mark reachable: a result belongs to an
+      // exam, and without it a guardian holds `mark:read` for a paper they
+      // cannot name. Scoped, and the service only ever returns an exam whose
+      // results the school has published — the read side of a report card,
+      // not a window into the exam office.
+      'exam:read',
       'mark:read',
       'report_card:read',
       'invoice:read',
@@ -263,6 +269,7 @@ export const ROLE_GRANTS: Readonly<Record<Role, readonly Grant[]>> = {
       'timetable:read',
       'attendance:read',
       'homework:read',
+      'exam:read',
       'mark:read',
       'report_card:read',
       'leave:read',
