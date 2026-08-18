@@ -14,7 +14,7 @@ import { Panel } from '../components/Panel.js';
 import { EmptyState } from '../components/EmptyState.js';
 import { QueryState } from '../components/QueryState.js';
 import { StatusPill } from '../components/StatusPill.js';
-import { AttendanceSegmented } from '../components/SegmentedControl.js';
+import { AttendanceLegend, AttendanceSegmented } from '../components/SegmentedControl.js';
 import { Toast, UnsavedStamp } from '../components/Toast.js';
 import { dateShort } from '../lib/format.js';
 
@@ -209,10 +209,15 @@ function DayPanel({
           ) : undefined
         }
       >
-        {!day.submittedAt && canWrite && (
-          <p className="border-b border-rule-soft px-4 py-2.5 text-[13px] text-ink-45 sm:px-5">
-            {t('attendance.tap_hint')}
-          </p>
+        {canWrite && (
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-1 border-b border-rule-soft px-4 py-2.5 sm:px-5">
+            {!day.submittedAt && (
+              <p className="text-[13px] text-ink-45">{t('attendance.tap_hint')}</p>
+            )}
+            <span className="ml-auto">
+              <AttendanceLegend />
+            </span>
+          </div>
         )}
 
         <ul>

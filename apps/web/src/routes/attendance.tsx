@@ -21,7 +21,7 @@ import { Panel } from '../components/Panel.js';
 import { EmptyState } from '../components/EmptyState.js';
 import { QueryState } from '../components/QueryState.js';
 import { StatusPill } from '../components/StatusPill.js';
-import { AttendanceSegmented } from '../components/SegmentedControl.js';
+import { AttendanceLegend, AttendanceSegmented } from '../components/SegmentedControl.js';
 import { Toast, UnsavedStamp } from '../components/Toast.js';
 import { attendanceRateLabel, dateShort } from '../lib/format.js';
 
@@ -292,10 +292,17 @@ function RegisterPanel({
           <EmptyState message="page.attendance.not_taken" />
         ) : (
           <>
-            {editable && !register.sessionId && (
-              <p className="border-b border-rule-soft px-4 py-2.5 text-[13px] text-ink-45 sm:px-5">
-                {t('attendance.tap_hint')}
-              </p>
+            {editable && (
+              <div className="flex flex-wrap items-center gap-x-3 gap-y-1 border-b border-rule-soft px-4 py-2.5 sm:px-5">
+                {!register.sessionId && (
+                  <p className="text-[13px] text-ink-45">{t('attendance.tap_hint')}</p>
+                )}
+                {/* Always on, not only on a blank register: the letters need
+                    explaining whenever they can be tapped. */}
+                <span className="ml-auto">
+                  <AttendanceLegend />
+                </span>
+              </div>
             )}
 
             <ul>

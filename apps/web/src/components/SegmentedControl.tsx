@@ -15,6 +15,13 @@ import { useT } from '../lib/i18n.js';
  * Real buttons with `aria-pressed`, so the register is usable from a keyboard
  * and audible to a screen reader — a teacher tabbing down a class of 45 is a
  * genuine case, not a hypothetical one.
+ *
+ * Each button keeps its `title`, which is the hover tooltip on a desktop. It is
+ * not the whole answer: `title` waits about a second and does nothing at all on
+ * a touch screen, which is the primary device for this screen. So the full
+ * label also ships as visually-hidden text for screen readers, and
+ * `AttendanceLegend` spells the letters out above the register where everyone
+ * can see them without hovering anything.
  */
 
 const ORDER: AttendanceStatusWire[] = [
@@ -74,5 +81,20 @@ export function AttendanceSegmented({
         );
       })}
     </div>
+  );
+}
+
+/**
+ * The letters, spelled out.
+ *
+ * A tooltip a phone cannot display is not an explanation. This sits above the
+ * register, costs one line, and answers "what does E mean?" before it is asked.
+ */
+export function AttendanceLegend() {
+  const t = useT();
+  return (
+    <p className="font-mono text-[10.5px] tracking-[0.04em] text-ink-45">
+      {t('attendance.legend')}
+    </p>
   );
 }

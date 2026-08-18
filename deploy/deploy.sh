@@ -1,7 +1,13 @@
 #!/usr/bin/env bash
-# Deploy. Run from the repo root, from a laptop or from CI.
+# Deploy. Run from the repo root, on your own machine.
 #
 #   ./deploy/deploy.sh
+#
+# **Not on the instance.** That box is a t4g.micro sharing 1 GB between
+# Postgres, the API and Caddy; building a Node image on it would thrash swap or
+# get OOM-killed, and take the live site down with it. It has no repo and no
+# build toolchain, deliberately. The only things that ever run there are what
+# this script tells it over SSM: pull, migrate, restart.
 #
 # No SSH, no keys, no open port 22. Artifacts go to S3 and the instance is
 # driven through SSM Run Command, which authenticates with the same IAM

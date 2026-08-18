@@ -465,10 +465,22 @@ export const en = {
   'attendance.status.ABSENT_UNEXPLAINED': 'Absent',
   'attendance.status.ABSENT_APPROVED': 'Absent — approved',
   'attendance.status.LATE': 'Late',
+  // The letters on the segmented control. `L` used to mean approved leave and
+  // `T` meant late, from "tardy" — a word this interface never uses. A teacher
+  // marking a child who arrived at 9:10 reaches for L, and would have recorded
+  // an approved absence: the child leaves the denominator instead of counting
+  // as present-but-late. Wrong in the one number rule 6 exists to protect, and
+  // wrong silently.
+  //
+  // So L is Late, and approved leave is E for excused. A legend sits above the
+  // register as well, because a tooltip a phone cannot show is not an
+  // explanation.
   'attendance.status.PRESENT.short': 'P',
   'attendance.status.ABSENT_UNEXPLAINED.short': 'A',
-  'attendance.status.ABSENT_APPROVED.short': 'L',
-  'attendance.status.LATE.short': 'T',
+  'attendance.status.ABSENT_APPROVED.short': 'E',
+  'attendance.status.LATE.short': 'L',
+
+  'attendance.legend': 'P present · A absent · E excused · L late',
 
   // ── Nothing-here states. Invitations, not dead ends. ───────────────────────
   'empty.generic': 'Nothing here yet.',
