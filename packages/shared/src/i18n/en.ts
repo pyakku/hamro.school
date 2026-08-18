@@ -22,6 +22,11 @@ export const en = {
   'error.forbidden': "You don't have access to that.",
   'error.unauthenticated': 'Sign in to continue.',
   'error.rate_limited': 'Too many attempts. Wait a minute and try again.',
+  'error.attendance.closed_day':
+    'The school was closed that day, so there is no register to take. Nobody is marked absent.',
+  'error.attendance.incomplete': 'Mark every student before saving.',
+  'error.attendance.locked': 'That day is locked. Ask the office to amend it.',
+  'error.attendance.amend_reason': 'Say why you are changing a locked day.',
   'error.auth.invalid_credentials': "That email and password don't match.",
   'error.auth.account_inactive': 'This account has been deactivated. Ask your school office.',
   'error.auth.no_roles': 'This account has no role at the school yet. Ask your school office.',
@@ -159,6 +164,7 @@ export const en = {
   'home.my_sections.register_due': 'Register due',
   'home.my_sections.take': 'Take the register',
   'home.my_sections.students': '{count} students',
+  'home.my_sections.students.one': 'One student',
   'home.my_sections.empty':
     'You have no classes this year yet. The office assigns them — ask them to add yours.',
 
@@ -183,6 +189,7 @@ export const en = {
   'home.fees.collected': 'Collected',
   'home.fees.outstanding': 'Outstanding',
   'home.fees.overdue_count': '{count} invoices overdue',
+  'home.fees.overdue_count.one': 'One invoice overdue',
   'home.fees.overdue_none': 'Nothing overdue.',
   'home.fees.my_outstanding': 'Your balance',
   'home.fees.settled': 'Nothing due. Thank you.',
@@ -205,6 +212,24 @@ export const en = {
   'page.attendance.summary': '{present} present · {absent} absent · {late} late',
   'page.attendance.rate': 'Attendance',
   'page.attendance.empty': 'No registers yet this term.',
+
+  // Taking the register. Buttons name the action; the same word runs through
+  // the whole flow — "Save attendance" produces "Attendance saved".
+  'attendance.take': 'Take the register',
+  'attendance.save': 'Save attendance',
+  'attendance.saving': 'Saving…',
+  'attendance.saved': 'Attendance saved',
+  'attendance.saved_detail': '{present} present · {absent} absent · {late} late',
+  'attendance.saved_notify': '{count} guardians would be notified of an absence.',
+  'attendance.saved_notify.one': 'One guardian would be notified of an absence.',
+  'attendance.unsaved': 'Unsaved',
+  'attendance.all_present': 'Everyone present',
+  'attendance.reset': 'Start again',
+  'attendance.amend_title': 'This day is locked',
+  'attendance.amend_reason': 'Why are you changing it?',
+  'attendance.amend_placeholder': 'Corrected after checking the paper register',
+  'attendance.locked_note': 'Locked on {date}. Amending is recorded.',
+  'attendance.tap_hint': 'Everyone starts present. Tap only the ones who are not.',
 
   'page.homework.title': 'Homework',
   'page.homework.subtitle': 'What has been set, and when it is due.',
@@ -261,6 +286,7 @@ export const en = {
   'page.fees.my_invoices': 'Your invoices',
   'page.fees.receipt': 'Receipt {number}',
   'page.fees.days_overdue': '{count} days overdue',
+  'page.fees.days_overdue.one': 'One day overdue',
   'page.fees.due_on': 'Due {date}',
   'page.fees.paid_on': 'Paid {date}',
 

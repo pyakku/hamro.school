@@ -78,3 +78,43 @@ export const registerQuerySchema = z.object({
   /** Defaults to today at the school, not today in the browser. */
   date: localDateSchema.optional(),
 });
+
+/**
+ * Saving a register.
+ *
+ * The client sends a status for **every** enrolment in the class, not just the
+ * absentees. The interface is exception-first — everyone starts present and a
+ * teacher taps the three who are not — but the storage is not: rule 6 wants a
+ * row per child per session, because "no record" has to keep meaning "no
+ * register was taken" rather than "present". Collapsing the two is what makes
+ * an attendance percentage unarguable a year later.
+ */
+export const registerEntrySchema = z.object({
+  enrolmentId: idSchema,
+  status: attendanceStatusSchema,
+  /** Only meaningful with LATE; the server clears it otherwise. */
+  minutesLate: z.number().int().min(0).max(600).nullish(),
+  remark: z.string().trim().max(280).nullish(),
+});
+
+export const saveRegisterRequestSchema = z.object({
+  sectionId: idSchema,
+  date: localDateSchema,
+  entries: z.array(registerEntrySchema).min(1).max(200),
+  /**
+   * Required to change a day the school has already locked. The reason goes
+   * into the audit trail, because amending attendance after the fact is
+   * exactly the change someone will be asked to justify.
+   */
+  amendReason: z.string().trim().min(3).max(280).optional(),
+});
+
+export type SaveRegisterRequest = z.infer<typeof saveRegisterRequestSchema>;
+
+export const saveRegisterResponseSchema = z.object({
+  sessionId: idSchema,
+  submittedAt: z.string(),
+  saved: z.number().int(),
+  /** Guardians the school would notify of an absence. Counted, not sent — yet. */
+  absentees: z.number().int(),
+});

@@ -44,3 +44,25 @@ export const validationFailed = (fields?: Record<string, string>): AppError =>
  */
 export const invalidCredentials = (): AppError =>
   new AppError(401, 'INVALID_CREDENTIALS', 'error.auth.invalid_credentials');
+
+/**
+ * Attendance refusals.
+ *
+ * Each of these is a rule the product would rather state than silently work
+ * around, because every one of them protects a number a school will later be
+ * asked to defend.
+ */
+
+/** A holiday or closure. No register exists for it and none should (rule 6). */
+export const closedDay = (): AppError =>
+  new AppError(409, 'CLOSED_DAY', 'error.attendance.closed_day');
+
+/** Half a class is worse than none: the missing children look untaken. */
+export const incompleteRegister = (): AppError =>
+  new AppError(422, 'INCOMPLETE_REGISTER', 'error.attendance.incomplete');
+
+export const lockedDay = (): AppError =>
+  new AppError(403, 'ATTENDANCE_LOCKED', 'error.attendance.locked');
+
+export const amendReasonRequired = (): AppError =>
+  new AppError(422, 'AMEND_REASON_REQUIRED', 'error.attendance.amend_reason');

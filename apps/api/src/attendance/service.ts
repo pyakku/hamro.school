@@ -2,17 +2,27 @@ import {
   fromLocalDate,
   type LocalDate,
   type Register,
+  type SaveRegisterRequest,
   type SectionAttendance,
 } from '@hamro/shared';
-import type { TenantClient } from '../db/tenant.js';
+import type { TenantClient, TenantContext } from '../db/tenant.js';
 import type { Actor } from '../policy/guard.js';
 import {
   assertPermission,
+  hasPermission,
   resolveOwnChildEnrolmentIds,
   resolveOwnEnrolmentIds,
   resolveOwnSectionIds,
 } from '../policy/guard.js';
-import { notFound } from '../lib/errors.js';
+import { auditedWrite } from '../db/audit.js';
+import {
+  amendReasonRequired,
+  closedDay,
+  forbidden,
+  incompleteRegister,
+  lockedDay,
+  notFound,
+} from '../lib/errors.js';
 import { findNonSchoolDayReason, type CurrentYear } from '../school/service.js';
 import { fullName, instantWire } from '../lib/wire.js';
 
@@ -235,12 +245,52 @@ export async function loadRegister(
   };
 
   if (!session) {
+    /**
+     * Nobody has taken it yet.
+     *
+     * For someone who may *write* the register, that is not an empty screen —
+     * it is a blank one waiting to be filled, so the roster comes back with
+     * everyone defaulted to present. That default is the whole interaction:
+     * a teacher taps the three who are absent instead of confirming forty-two
+     * who are not.
+     *
+     * `sessionId: null` still distinguishes this from a register that was
+     * taken and happened to be all present, so nothing downstream can mistake
+     * a draft for a fact. A reader who cannot write gets no rows at all, which
+     * is the honest answer to "what was recorded": nothing was.
+     */
+    // Not on a closed day, whatever the reader's permissions. A holiday has no
+    // register to take, and handing a teacher a blank one to fill in invites
+    // precisely the wrong action — the day must leave the denominator rather
+    // than acquire a set of records (rule 6).
+    if (reason !== null || !hasPermission(actor, 'attendance:write')) {
+      return { ...base, sessionId: null, submittedAt: null, takenByName: null, rows: [] };
+    }
+
+    const roster = await db.enrolment.findMany({
+      where: { sectionId: section.id, academicYearId: year.id, status: 'ACTIVE' },
+      select: {
+        id: true,
+        rollNumber: true,
+        student: { select: { firstName: true, middleName: true, lastName: true } },
+      },
+    });
+
     return {
       ...base,
       sessionId: null,
       submittedAt: null,
       takenByName: null,
-      rows: [],
+      rows: roster
+        .map((enrolment) => ({
+          enrolmentId: enrolment.id,
+          rollNumber: enrolment.rollNumber,
+          fullName: fullName(enrolment.student),
+          status: 'PRESENT' as const,
+          minutesLate: null,
+          remark: null,
+        }))
+        .sort((a, b) => a.rollNumber - b.rollNumber),
     };
   }
 
@@ -285,4 +335,157 @@ export async function loadRegister(
 export function defaultSectionId(sections: readonly SectionAttendance[]): string | null {
   const due = sections.find((section) => !section.registerTakenToday);
   return due?.sectionId ?? sections[0]?.sectionId ?? null;
+}
+
+/**
+ * Saving a register.
+ *
+ * The guarantees this function is responsible for, each of which is a thing a
+ * school will one day argue about:
+ *
+ *   · **A record for every child in the session, not just the absentees.** The
+ *     screen is exception-first; the storage is not. "No record" must keep
+ *     meaning "no register was taken" (rule 6), and the day that stops being
+ *     true, every attendance percentage in the school becomes unprovable.
+ *
+ *   · **Nothing is written on a closed day.** A holiday leaves the denominator
+ *     rather than filling it with absences, so a register for one is refused
+ *     outright instead of quietly accepted.
+ *
+ *   · **A locked day needs `attendance:amend` and a reason.** Changing
+ *     attendance after the fact is the change someone gets asked to justify,
+ *     and the reason lands in the append-only trail with the diff.
+ *
+ *   · **Only children actually enrolled in this section.** An entry naming
+ *     somebody else's child is rejected rather than filtered, because a client
+ *     sending one is either broken or probing.
+ */
+export async function saveRegister(
+  db: TenantClient,
+  ctx: TenantContext,
+  actor: Actor,
+  year: CurrentYear,
+  input: SaveRegisterRequest,
+): Promise<{ sessionId: string; submittedAt: string; saved: number; absentees: number }> {
+  const scope = assertPermission(actor, 'attendance:write');
+
+  if (scope === 'OWN_SECTIONS') {
+    const own = await resolveOwnSectionIds(db, actor.userId, year.id);
+    if (!own.has(input.sectionId)) throw notFound();
+  } else if (scope !== 'ALL') {
+    // Nobody else holds attendance:write in the matrix. If that changes, this
+    // refuses rather than guessing what the new scope ought to mean.
+    throw forbidden();
+  }
+
+  const section = await db.section.findFirst({
+    where: { id: input.sectionId, academicYearId: year.id },
+    select: { id: true, gradeLevelId: true },
+  });
+  if (!section) throw notFound();
+
+  const reason = await findNonSchoolDayReason(db, year.id, input.date, {
+    sectionId: section.id,
+    gradeLevelId: section.gradeLevelId,
+  });
+  if (reason !== null) throw closedDay();
+
+  const on = fromLocalDate(input.date);
+
+  // The roster, as the source of truth for who may appear in this register.
+  const roster = await db.enrolment.findMany({
+    where: { sectionId: section.id, academicYearId: year.id, status: 'ACTIVE' },
+    select: { id: true },
+  });
+  const rosterIds = new Set(roster.map((row) => row.id));
+
+  const entries = input.entries.filter((entry) => rosterIds.has(entry.enrolmentId));
+  if (entries.length !== input.entries.length) throw notFound();
+  if (entries.length !== rosterIds.size) {
+    // A partial register is a register that will be misread later: the children
+    // left out look like a day nobody took, in a class where somebody did.
+    throw incompleteRegister();
+  }
+
+  const existing = await db.attendanceSession.findFirst({
+    where: { sectionId: section.id, date: on, sessionKey: 'DAY' },
+    select: { id: true, lockedAt: true, submittedAt: true },
+  });
+
+  if (existing?.lockedAt) {
+    if (!hasPermission(actor, 'attendance:amend')) throw lockedDay();
+    if (!input.amendReason) throw amendReasonRequired();
+  }
+
+  const isAmendment = Boolean(existing?.submittedAt);
+  const submittedAt = new Date();
+
+  const before = existing
+    ? await db.attendanceRecord.findMany({
+        where: { sessionId: existing.id },
+        select: { enrolmentId: true, status: true, minutesLate: true },
+      })
+    : [];
+
+  const sessionId = await auditedWrite(
+    db,
+    ctx,
+    {
+      entityType: 'AttendanceSession',
+      entityId: existing?.id ?? '',
+      action: isAmendment ? 'UPDATE' : 'CREATE',
+      before: existing ? { records: before } : null,
+      after: { date: input.date, sectionId: section.id, records: entries },
+      reason: input.amendReason ?? null,
+    },
+    async () => {
+      const session = existing
+        ? await db.attendanceSession.update({
+            where: { id: existing.id },
+            data: { takenByUserId: actor.userId, submittedAt },
+          })
+        : await db.attendanceSession.create({
+            data: {
+              schoolId: actor.schoolId,
+              academicYearId: year.id,
+              sectionId: section.id,
+              date: on,
+              sessionKey: 'DAY',
+              takenByUserId: actor.userId,
+              submittedAt,
+            },
+          });
+
+      // Replace rather than merge. A re-save is the whole register as the
+      // teacher now sees it, and a leftover row from a previous save would be
+      // a child whose status silently disagrees with the screen.
+      await db.attendanceRecord.deleteMany({ where: { sessionId: session.id } });
+
+      await db.attendanceRecord.createMany({
+        data: entries.map((entry) => ({
+          schoolId: actor.schoolId,
+          sessionId: session.id,
+          enrolmentId: entry.enrolmentId,
+          date: on,
+          status: entry.status,
+          // Minutes only mean something alongside LATE; carrying them on a
+          // PRESENT row would be a number nobody can interpret later.
+          minutesLate: entry.status === 'LATE' ? (entry.minutesLate ?? null) : null,
+          remark: entry.remark ?? null,
+          recordedByUserId: actor.userId,
+        })),
+      });
+
+      return session.id;
+    },
+  );
+
+  return {
+    sessionId,
+    submittedAt: submittedAt.toISOString(),
+    saved: entries.length,
+    absentees: entries.filter(
+      (entry) => entry.status === 'ABSENT_UNEXPLAINED' || entry.status === 'ABSENT_APPROVED',
+    ).length,
+  };
 }
