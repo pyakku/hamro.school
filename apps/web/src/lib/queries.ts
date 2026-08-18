@@ -1,6 +1,8 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import type {
   SaveRegisterRequest,
+  SaveStaffAttendanceRequest,
+  StaffAttendanceDayView,
   ExamRow,
   HomeworkSummary,
   InvoiceRow,
@@ -239,5 +241,25 @@ export function useSaveRegister() {
       void queryClient.invalidateQueries({ queryKey: ['attendance'] });
       void queryClient.invalidateQueries({ queryKey: ['overview'] });
     },
+  });
+}
+
+export function useStaffAttendance(date: LocalDate | null) {
+  return useQuery({
+    queryKey: ['staff-attendance', date],
+    queryFn: () => api.get<StaffAttendanceDayView>(query('/staff-attendance', { date: date ?? undefined })),
+    staleTime: 30 * 1000,
+  });
+}
+
+export function useSaveStaffAttendance() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (body: SaveStaffAttendanceRequest) =>
+      api.put<{ dayId: string; submittedAt: string; saved: number; absentees: number }>(
+        '/staff-attendance',
+        body,
+      ),
+    onSuccess: () => void queryClient.invalidateQueries({ queryKey: ['staff-attendance'] }),
   });
 }

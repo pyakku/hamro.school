@@ -258,6 +258,19 @@ export const en = {
   'page.students.empty': 'No students yet. Import a spreadsheet to bring a year group in.',
   'page.students.no_match': 'No student matches “{query}”.',
 
+  'nav.staff_attendance': 'Staff attendance',
+  'page.staff_attendance.title': 'Staff attendance',
+  'page.staff_attendance.subtitle': 'Who was in, and who was not.',
+  'page.staff_attendance.empty': 'No staff on the roll yet.',
+  'page.staff_attendance.not_taken': 'No return for this day yet.',
+  'page.staff_attendance.save': 'Save the return',
+  'page.staff_attendance.saved': 'Staff attendance saved',
+  'page.staff_attendance.on_leave': 'On approved leave',
+  'page.staff_attendance.leave_locked':
+    'The office approved leave for this day, so it cannot be changed here.',
+  'page.staff_attendance.mine': 'Your attendance',
+  'page.staff_attendance.mine_empty': 'Nothing recorded for you today.',
+
   'page.staff.title': 'Staff',
   'page.staff.subtitle': 'Teachers and office staff.',
   'page.staff.empty': 'No staff added yet. Add the first one.',

@@ -9,6 +9,7 @@ export * from './schemas/signup.js';
 export * from './schemas/platform.js';
 export * from './schemas/school.js';
 export * from './schemas/attendance.js';
+export * from './schemas/staff-attendance.js';
 export * from './schemas/communication.js';
 export * from './schemas/people.js';
 export * from './schemas/assessment.js';

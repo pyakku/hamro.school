@@ -246,42 +246,44 @@ model School {
   updatedAt DateTime  @updatedAt @map("updated_at") @db.Timestamptz(3)
   deletedAt DateTime? @map("deleted_at") @db.Timestamptz(3)
 
-  academicYears        AcademicYear[]
-  users                User[]
-  roleAssignments      RoleAssignment[]
-  students             Student[]
-  guardians            Guardian[]
-  staff                StaffProfile[]
-  gradeLevels          GradeLevel[]
-  sections             Section[]
-  subjects             Subject[]
-  subjectOfferings     SubjectOffering[]
-  teachingAssignments  TeachingAssignment[]
-  periodSlots          PeriodSlot[]
-  timetableEntries     TimetableEntry[]
-  attendanceSessions   AttendanceSession[]
-  attendanceRecords    AttendanceRecord[]
-  holidays             Holiday[]
-  closures             Closure[]
-  studentLeaveRequests StudentLeaveRequest[]
-  staffLeaveRequests   StaffLeaveRequest[]
-  homeworkPosts        HomeworkPost[]
-  notices              Notice[]
-  exams                Exam[]
-  examSubjects         ExamSubject[]
-  marks                Mark[]
-  gradingScales        GradingScale[]
-  gradingAssignments   GradingScaleAssignment[]
-  reportCardRuns       ReportCardRun[]
-  feeStructures        FeeStructure[]
-  feeItems             FeeItem[]
-  feeConcessions       FeeConcession[]
-  invoices             Invoice[]
-  payments             Payment[]
-  deviceTokens         DeviceToken[]
-  auditLogs            AuditLog[]
-  enrolments           Enrolment[]
-  terms                Term[]
+  academicYears          AcademicYear[]
+  users                  User[]
+  roleAssignments        RoleAssignment[]
+  students               Student[]
+  guardians              Guardian[]
+  staff                  StaffProfile[]
+  gradeLevels            GradeLevel[]
+  sections               Section[]
+  subjects               Subject[]
+  subjectOfferings       SubjectOffering[]
+  teachingAssignments    TeachingAssignment[]
+  periodSlots            PeriodSlot[]
+  timetableEntries       TimetableEntry[]
+  attendanceSessions     AttendanceSession[]
+  attendanceRecords      AttendanceRecord[]
+  staffAttendanceDays    StaffAttendanceDay[]
+  staffAttendanceRecords StaffAttendanceRecord[]
+  holidays               Holiday[]
+  closures               Closure[]
+  studentLeaveRequests   StudentLeaveRequest[]
+  staffLeaveRequests     StaffLeaveRequest[]
+  homeworkPosts          HomeworkPost[]
+  notices                Notice[]
+  exams                  Exam[]
+  examSubjects           ExamSubject[]
+  marks                  Mark[]
+  gradingScales          GradingScale[]
+  gradingAssignments     GradingScaleAssignment[]
+  reportCardRuns         ReportCardRun[]
+  feeStructures          FeeStructure[]
+  feeItems               FeeItem[]
+  feeConcessions         FeeConcession[]
+  invoices               Invoice[]
+  payments               Payment[]
+  deviceTokens           DeviceToken[]
+  auditLogs              AuditLog[]
+  enrolments             Enrolment[]
+  terms                  Term[]
 
   @@index([isActive])
   @@map("schools")
@@ -319,6 +321,7 @@ model AcademicYear {
   periodSlots          PeriodSlot[]
   timetableEntries     TimetableEntry[]
   attendanceSessions   AttendanceSession[]
+  staffAttendanceDays  StaffAttendanceDay[]
   holidays             Holiday[]
   closures             Closure[]
   studentLeaveRequests StudentLeaveRequest[]
@@ -417,15 +420,17 @@ model User {
   guardianProfile       Guardian?
   staffProfile          StaffProfile?
   auditLogs             AuditLog[]
-  noticesAuthored       Notice[]              @relation("NoticeAuthor")
-  closuresDeclared      Closure[]             @relation("ClosureDeclaredBy")
-  attendanceTaken       AttendanceSession[]   @relation("AttendanceTakenBy")
-  attendanceEdits       AttendanceRecord[]    @relation("AttendanceRecordedBy")
-  marksEntered          Mark[]                @relation("MarkEnteredBy")
-  marksVerified         Mark[]                @relation("MarkVerifiedBy")
-  paymentsRecorded      Payment[]             @relation("PaymentRecordedBy")
-  studentLeaveDecisions StudentLeaveRequest[] @relation("StudentLeaveDecidedBy")
-  staffLeaveDecisions   StaffLeaveRequest[]   @relation("StaffLeaveDecidedBy")
+  noticesAuthored       Notice[]                @relation("NoticeAuthor")
+  closuresDeclared      Closure[]               @relation("ClosureDeclaredBy")
+  attendanceTaken       AttendanceSession[]     @relation("AttendanceTakenBy")
+  attendanceEdits       AttendanceRecord[]      @relation("AttendanceRecordedBy")
+  staffAttendanceTaken  StaffAttendanceDay[]    @relation("StaffAttendanceTakenBy")
+  staffAttendanceEdits  StaffAttendanceRecord[] @relation("StaffAttendanceRecordedBy")
+  marksEntered          Mark[]                  @relation("MarkEnteredBy")
+  marksVerified         Mark[]                  @relation("MarkVerifiedBy")
+  paymentsRecorded      Payment[]               @relation("PaymentRecordedBy")
+  studentLeaveDecisions StudentLeaveRequest[]   @relation("StudentLeaveDecidedBy")
+  staffLeaveDecisions   StaffLeaveRequest[]     @relation("StaffLeaveDecidedBy")
 
   @@unique([schoolId, username])
   @@unique([identifier])
@@ -647,11 +652,12 @@ model StaffProfile {
   deletedAt       DateTime? @map("deleted_at") @db.Timestamptz(3)
   deletedByUserId String?   @map("deleted_by_user_id")
 
-  classTeacherOf      Section[]            @relation("ClassTeacher")
+  classTeacherOf      Section[]               @relation("ClassTeacher")
   teachingAssignments TeachingAssignment[]
   timetableEntries    TimetableEntry[]
   homeworkPosts       HomeworkPost[]
   leaveRequests       StaffLeaveRequest[]
+  attendanceRecords   StaffAttendanceRecord[]
 
   @@unique([schoolId, employeeCode])
   @@index([schoolId, status])
@@ -1107,6 +1113,79 @@ model StudentLeaveRequest {
 /// Staff leave is a different problem from student leave — it needs cover, not
 /// an attendance status — so it is a separate table rather than a shared one
 /// with nullable halves.
+/// Whether staff were in, on a given day.
+///
+/// Deliberately the same four states as a student's attendance, and the same
+/// rule: a closed day has no records at all, so it leaves the denominator
+/// rather than counting as absence. Approved leave stays separable from an
+/// unexplained absence, because the difference is the whole of the
+/// conversation when it is later disputed — here about pay and cover rather
+/// than about a child's record.
+///
+/// A school takes staff attendance once for the whole school, not per section,
+/// so the day itself is the unit that carries "this was taken".
+model StaffAttendanceDay {
+  id             String       @id @default(cuid())
+  schoolId       String       @map("school_id")
+  school         School       @relation(fields: [schoolId], references: [id])
+  academicYearId String       @map("academic_year_id")
+  academicYear   AcademicYear @relation(fields: [academicYearId], references: [id])
+
+  date DateTime @db.Date
+
+  takenByUserId String?   @map("taken_by_user_id")
+  takenBy       User?     @relation("StaffAttendanceTakenBy", fields: [takenByUserId], references: [id])
+  /// Null means started and not finished — somebody owes the office a return.
+  submittedAt   DateTime? @map("submitted_at") @db.Timestamptz(3)
+  lockedAt      DateTime? @map("locked_at") @db.Timestamptz(3)
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  records StaffAttendanceRecord[]
+
+  @@unique([schoolId, date])
+  @@index([schoolId, academicYearId, date])
+  @@map("staff_attendance_days")
+}
+
+model StaffAttendanceRecord {
+  id       String @id @default(cuid())
+  schoolId String @map("school_id")
+  school   School @relation(fields: [schoolId], references: [id])
+
+  dayId String             @map("day_id")
+  day   StaffAttendanceDay @relation(fields: [dayId], references: [id], onDelete: Cascade)
+
+  staffId String       @map("staff_id")
+  staff   StaffProfile @relation(fields: [staffId], references: [id])
+
+  /// Denormalised from the day, so a query for one person's year does not have
+  /// to join — the same trade the student records make.
+  date DateTime @db.Date
+
+  status AttendanceStatus
+
+  /// Set when the absence is covered by an approved leave request, so the two
+  /// records cannot drift apart.
+  leaveRequestId String?            @map("leave_request_id")
+  leaveRequest   StaffLeaveRequest? @relation(fields: [leaveRequestId], references: [id])
+
+  minutesLate Int?    @map("minutes_late")
+  remark      String?
+
+  recordedByUserId String? @map("recorded_by_user_id")
+  recordedBy       User?   @relation("StaffAttendanceRecordedBy", fields: [recordedByUserId], references: [id])
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  @@unique([dayId, staffId])
+  @@index([schoolId, staffId, date])
+  @@index([schoolId, date, status])
+  @@map("staff_attendance_records")
+}
+
 model StaffLeaveRequest {
   id       String       @id @default(cuid())
   schoolId String       @map("school_id")
@@ -1128,6 +1207,8 @@ model StaffLeaveRequest {
 
   createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
   updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  attendanceRecords StaffAttendanceRecord[]
 
   @@index([schoolId, staffId, startDate])
   @@map("staff_leave_requests")

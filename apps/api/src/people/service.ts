@@ -30,6 +30,58 @@ import { dateWire, fullName } from '../lib/wire.js';
  * wrote the select.
  */
 
+/**
+ * What a search box means in a school office.
+ *
+ * The obvious implementation — substring-match everything — is wrong here, and
+ * wrong in a way that looks like the feature is broken rather than misjudged.
+ * Admission numbers carry the year: `GH-2026-0001`. Typing "2" then matches
+ * every child in the school through the "2" in 2026, so the list does not
+ * visibly change and the user concludes nothing happened. Typing "1" filters to
+ * a third of them, so it appears to work. The bug is invisible until somebody
+ * types a single digit and says "search is broken".
+ *
+ * So a short run of digits means the one thing it almost always means in a
+ * classroom: a roll number. Longer digit strings could plausibly be an
+ * admission number or a phone, so those are matched too.
+ *
+ * Phone matching is a plain substring against the stored text, which holds
+ * numbers like `+977-9884078833`. Searching `9884` finds it; searching
+ * `9884 078` does not. Normalising properly needs a digits-only column to index
+ * against, which is worth doing when somebody actually searches that way.
+ */
+function searchFilter(search: string, canSeeGuardians: boolean): object[] {
+  const digitsOnly = /^\d+$/.test(search);
+
+  if (digitsOnly && search.length <= 2) {
+    // "7" is roll number seven, not "every child admitted in a year with a 7".
+    return [{ rollNumber: Number(search) }];
+  }
+
+  const contains = { contains: search, mode: 'insensitive' as const };
+
+  return [
+    { student: { firstName: contains } },
+    { student: { lastName: contains } },
+    { student: { admissionNumber: contains } },
+    ...(digitsOnly ? [{ rollNumber: Number(search) }] : []),
+    // A parent rings the office and the only thing on screen is their number.
+    ...(canSeeGuardians
+      ? [
+          {
+            student: {
+              guardians: {
+                some: {
+                  OR: [{ guardian: { phone: contains } }, { guardian: { altPhone: contains } }],
+                },
+              },
+            },
+          },
+        ]
+      : []),
+  ];
+}
+
 /** The enrolment filter for this reader, or null for "everyone in the year". */
 async function enrolmentFilter(
   db: TenantClient,
@@ -72,16 +124,7 @@ export async function listStudents(
       status: 'ACTIVE',
       ...(filter ?? {}),
       ...(options.sectionId ? { sectionId: options.sectionId } : {}),
-      ...(search
-        ? {
-            OR: [
-              { student: { firstName: { contains: search, mode: 'insensitive' as const } } },
-              { student: { lastName: { contains: search, mode: 'insensitive' as const } } },
-              { student: { admissionNumber: { contains: search, mode: 'insensitive' as const } } },
-              ...(/^\d+$/.test(search) ? [{ rollNumber: Number(search) }] : []),
-            ],
-          }
-        : {}),
+      ...(search ? { OR: searchFilter(search, canSeeGuardians) } : {}),
     },
     take: options.limit ?? 100,
     select: {
